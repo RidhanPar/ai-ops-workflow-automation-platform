@@ -1,0 +1,6 @@
+agent,team,skill,active_tickets,avg_resolution_hours,productivity_score
+Ridhan P,Workforce Desk,SLA monitoring,2,5.5,94
+Anna K,Billing Ops,Billing investigations,4,7.2,88
+Markus L,Technical Support,API and platform issues,3,6.1,91
+Sofia R,Policy Ops,Policy reviews,5,9.4,86
+Emils B,Escalations Desk,Critical escalations,1,4.8,96

@@ -1,0 +1,7 @@
+ticket_id,external_id,title,customer,channel,category,priority,status,owner,team,created_at,sla_due_at,resolved_at,sla_status,escalated
+1,AIOPS-00001,Campaign payment failed after invoice update,Baltic Retail Group,email,billing,high,open,Anna K,Billing Ops,2026-05-23T08:00:00,2026-05-23T14:00:00,,at_risk,false
+2,AIOPS-00002,API sync error blocking daily reporting,Internal Reporting,slack,technical,critical,in_progress,Markus L,Technical Support,2026-05-23T07:30:00,2026-05-23T11:30:00,,at_risk,true
+3,AIOPS-00003,Policy appeal waiting for review,Nordic Ads Agency,portal,policy,medium,waiting_customer,Sofia R,Policy Ops,2026-05-22T15:30:00,2026-05-24T09:30:00,,on_track,false
+4,AIOPS-00004,Backlog spike in billing queue,Operations Lead,email,workforce,high,open,Ridhan P,Workforce Desk,2026-05-23T09:15:00,2026-05-23T18:15:00,,on_track,false
+5,AIOPS-00005,Customer asks for refund confirmation,Ecom Store LV,chat,billing,medium,resolved,Anna K,Billing Ops,2026-05-21T09:00:00,2026-05-22T09:00:00,2026-05-22T07:00:00,met,false
+6,AIOPS-00006,Urgent outage affecting case assignment,Support Operations,slack,technical,critical,open,Emils B,Escalations Desk,2026-05-23T06:00:00,2026-05-23T08:00:00,,breached,true
