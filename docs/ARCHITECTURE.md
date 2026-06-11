@@ -1,51 +1,32 @@
 # Architecture
 
-## System Overview
+## Request Path
 
-The platform has four core layers:
+Every HTTP request receives an `X-Trace-ID`. JWT authentication resolves the actor and RBAC role before protected endpoints execute. Operational changes write an audit event in the same database transaction.
 
-1. React dashboard for operations monitoring and workflow control
-2. FastAPI backend for ticket, KPI, workflow, AI, and report APIs
-3. PostgreSQL database for tickets, agents, workflow rules, executions, and notifications
-4. Power BI/reporting layer using CSV and web API exports
+## Agent Path
 
-## Main Data Flow
+1. LangGraph routes the ticket through context gathering and reasoning nodes.
+2. `search_knowledge_base` retrieves relevant guidance using PostgreSQL pgvector in production or deterministic local vectors in demo/test mode.
+3. `get_customer_history` retrieves recent ticket context.
+4. Ticket and retrieved content are treated as untrusted data; prompt-injection indicators are surfaced as safety flags.
+5. OpenAI returns a Pydantic-validated structured recommendation when configured.
+6. Invalid output, provider failure, and unexpected failure use separately identified fallbacks.
+7. Write-enabled agent runs create a human approval request instead of directly updating the ticket.
+8. LLM source, tools, knowledge sources, token counts, cost estimate, latency, and trace ID are persisted.
+9. OpenTelemetry spans can be exported through OTLP to Arize Phoenix or another compatible backend.
 
-1. Ticket enters the system through API or demo seed data
-2. SLA status is calculated based on `created_at`, `sla_due_at`, `resolved_at`, and status
-3. Workflow rules check trigger conditions such as priority, category, status, or SLA risk
-4. Matching workflows perform actions such as escalation, assignment, notification, or approval flagging
-5. AI assistant summarizes ticket context and recommends category, priority, team, and next action
-6. Dashboard displays operational KPIs, backlog, ticket trend, and workforce metrics
-7. Power BI connects to `/reports/powerbi/tickets` or imports `/data/sample_tickets.csv`
+## Workflow Path
 
-## Workflow Rule Format
+Workflow rules use JSON triggers and actions. Every run requires an idempotency key. Sensitive escalation actions create approval requests; non-sensitive routing and notification actions execute transactionally. Each execution records its trace and audit event.
 
-Example:
+## Data Model
 
-```json
-{
-  "name": "Critical Ticket Escalation",
-  "trigger": { "priority": "critical" },
-  "actions": [
-    { "type": "escalate" },
-    { "type": "assign_team", "team": "Escalations Desk" },
-    { "type": "notify", "audience": "operations_lead" }
-  ]
-}
-```
+- Operational: tickets, agents, workflow rules, executions, notifications.
+- Agent/RAG: knowledge documents and vector embeddings.
+- Governance: users, approval requests, audit events.
+- Observability: trace spans with latency, token, cost, and error fields.
 
-## AI Assistant Design
+## Deployment Boundaries
 
-The assistant uses OpenAI when `OPENAI_API_KEY` is configured. If the key is missing or the API call fails, a local rule-based fallback still returns a useful summary and recommendation. This makes the project easy to demo without external cost.
-
-## Production Improvements To Add Later
-
-- Authentication and role-based access
-- Real-time WebSocket updates
-- Drag-and-drop workflow builder
-- Advanced forecasting for SLA breach prediction
-- Vector search over internal knowledge base
-- CI/CD pipeline
-- Unit and integration tests
-- Cloud deployment with managed PostgreSQL
+The production Compose profile runs PostgreSQL/pgvector, FastAPI workers, and an Nginx-served React build. Alembic owns schema creation and demo seeding is a separate, opt-in command.

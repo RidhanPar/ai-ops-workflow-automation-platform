@@ -6,10 +6,14 @@ import {
   CheckCircle2,
   Gauge,
   GitBranch,
+  KeyRound,
   LayoutDashboard,
+  ListChecks,
   RefreshCcw,
   Search,
+  ShieldCheck,
   Ticket,
+  Timer,
   Users,
   Zap,
 } from 'lucide-react';
@@ -34,8 +38,13 @@ import './styles.css';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 async function api(path, options = {}) {
+  const token = localStorage.getItem('aiops_token');
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
     ...options,
   });
   if (!response.ok) {
@@ -43,6 +52,44 @@ async function api(path, options = {}) {
     throw new Error(text || `API error ${response.status}`);
   }
   return response.json();
+}
+
+function Login({ onLogin }) {
+  const [username, setUsername] = useState(import.meta.env.VITE_DEMO_USERNAME || 'operator');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  async function submit(event) {
+    event.preventDefault();
+    const response = await fetch(`${API_BASE}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ username, password }),
+    });
+    if (!response.ok) {
+      setError('Login failed. Use one of the documented demo accounts.');
+      return;
+    }
+    const result = await response.json();
+    localStorage.setItem('aiops_token', result.access_token);
+    localStorage.setItem('aiops_role', result.role);
+    onLogin(result.role);
+  }
+
+  return (
+    <div className="login-shell">
+      <form className="login-card" onSubmit={submit}>
+        <div className="brand-icon"><ShieldCheck size={28} /></div>
+        <h1>Secure AI Ops Control Center</h1>
+        <p>Sign in to run traceable agent and workflow actions.</p>
+        <label>Username<input value={username} onChange={event => setUsername(event.target.value)} /></label>
+        <label>Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+        {error && <div className="toast">{error}</div>}
+        <button className="primary login-button"><KeyRound size={16} /> Sign in</button>
+        <small>Local demo credentials are documented in the README.</small>
+      </form>
+    </div>
+  );
 }
 
 function StatCard({ title, value, helper, icon: Icon }) {
@@ -150,17 +197,22 @@ function App() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
+  const [role, setRole] = useState(localStorage.getItem('aiops_role'));
+  const [traces, setTraces] = useState([]);
+  const [approvals, setApprovals] = useState([]);
 
   async function loadData() {
     setLoading(true);
     try {
-      const [overviewData, trendsData, backlogData, workforceData, ticketsData, workflowsData] = await Promise.all([
+      const [overviewData, trendsData, backlogData, workforceData, ticketsData, workflowsData, tracesData, approvalsData] = await Promise.all([
         api('/kpis/overview'),
         api('/kpis/trends'),
         api('/kpis/backlog'),
         api('/kpis/workforce'),
         api('/tickets'),
         api('/workflows'),
+        api('/observability/traces'),
+        api('/governance/approvals'),
       ]);
       setOverview(overviewData);
       setTrends(trendsData);
@@ -168,6 +220,8 @@ function App() {
       setWorkforce(workforceData);
       setTickets(ticketsData);
       setWorkflows(workflowsData);
+      setTraces(tracesData);
+      setApprovals(approvalsData);
       setSelectedTicket(ticketsData[0] || null);
     } catch (error) {
       setToast(error.message);
@@ -176,7 +230,7 @@ function App() {
     }
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { if (role) loadData(); }, [role]);
 
   const filteredTickets = useMemo(() => {
     const value = search.toLowerCase();
@@ -194,7 +248,7 @@ function App() {
     try {
       const result = await api('/ai/analyze-ticket', {
         method: 'POST',
-        body: JSON.stringify({ ticket_id: ticketId }),
+        body: JSON.stringify({ ticket_id: ticketId, allow_write_tools: true }),
       });
       setAiResult(result);
       setToast('AI analysis completed.');
@@ -209,13 +263,34 @@ function App() {
     try {
       const result = await api('/workflows/run', {
         method: 'POST',
-        body: JSON.stringify({ ticket_id: selectedTicket?.id || null }),
+        body: JSON.stringify({ ticket_id: selectedTicket?.id || null, idempotency_key: crypto.randomUUID() }),
       });
       setToast(`${result.executions.length} workflow execution(s) completed.`);
       await loadData();
     } catch (error) {
       setToast(error.message);
     }
+  }
+
+  if (!role) {
+    return <Login onLogin={setRole} />;
+  }
+
+  async function downloadReport() {
+    const token = localStorage.getItem('aiops_token');
+    const response = await fetch(`${API_BASE}/reports/powerbi/tickets.csv`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      setToast('Could not download the protected report.');
+      return;
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'powerbi_tickets_export.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   if (loading && !overview) {
@@ -241,7 +316,7 @@ function App() {
         </nav>
         <div className="side-card">
           <p>Power BI Dataset</p>
-          <a href={`${API_BASE}/reports/powerbi/tickets.csv`} target="_blank">Download CSV</a>
+          <button onClick={downloadReport}>Download protected CSV</button>
         </div>
       </aside>
 
@@ -253,8 +328,10 @@ function App() {
             <p>Monitor SLA risk, automate ticket routing, summarize issues with AI, and track support operations performance in one place.</p>
           </div>
           <div className="hero-actions">
+            <Badge type="enabled">{role}</Badge>
             <button onClick={loadData}><RefreshCcw size={16} /> Refresh</button>
             <button className="primary" onClick={runAutomation}><Zap size={16} /> Run Automation</button>
+            <button onClick={() => { localStorage.clear(); setRole(null); }}><KeyRound size={16} /> Sign out</button>
           </div>
         </header>
 
@@ -309,7 +386,9 @@ function App() {
                 <p><strong>Priority:</strong> {aiResult.recommended_priority}</p>
                 <p><strong>Team:</strong> {aiResult.recommended_team}</p>
                 <p><strong>Next action:</strong> {aiResult.next_action}</p>
-                <small>Confidence: {Math.round(aiResult.confidence * 100)}% · Source: {aiResult.source}</small>
+                <p><strong>Tools:</strong> {aiResult.tools_used?.join(' → ')}</p>
+                <p><strong>Knowledge:</strong> {aiResult.knowledge_sources?.join(', ') || 'No match'}</p>
+                <small>Confidence: {Math.round(aiResult.confidence * 100)}% · {aiResult.latency_ms} ms · Trace: {aiResult.trace_id}</small>
               </div>
             ) : selectedTicket ? (
               <div className="ai-card empty">
@@ -318,6 +397,31 @@ function App() {
                 {selectedTicket.ai_next_action && <p><strong>Next action:</strong> {selectedTicket.ai_next_action}</p>}
               </div>
             ) : <p>No ticket selected.</p>}
+          </Section>
+        </div>
+
+        <div className="dashboard-grid">
+          <Section title="Agent & Workflow Traces" subtitle="Latest persisted execution telemetry" icon={Timer}>
+            <div className="trace-list">
+              {traces.slice(0, 8).map((trace, index) => (
+                <div className="trace-row" key={`${trace.trace_id}-${index}`}>
+                  <div><strong>{trace.name}</strong><small>{trace.type} · {trace.trace_id.slice(0, 12)}</small></div>
+                  <Badge type={trace.status === 'success' ? 'enabled' : 'critical'}>{trace.status}</Badge>
+                  <span>{Math.round(trace.latency_ms)} ms</span>
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          <Section title="Human Approval Queue" subtitle="Sensitive actions stay reviewable and reversible" icon={ListChecks}>
+            <div className="trace-list">
+              {approvals.slice(0, 8).map(approval => (
+                <div className="trace-row" key={approval.id}>
+                  <div><strong>{approval.action_type}</strong><small>Ticket {approval.ticket_id} · {approval.requested_by}</small></div>
+                  <Badge type={approval.status === 'pending' ? 'high' : 'enabled'}>{approval.status}</Badge>
+                </div>
+              ))}
+            </div>
           </Section>
         </div>
 

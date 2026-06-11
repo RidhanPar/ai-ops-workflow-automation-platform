@@ -10,6 +10,13 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input { font: inherit; }
 button { cursor: pointer; border: none; }
+.primary { background: #2563eb; color: white; }
+.login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at top, #dbeafe, #eef2f7 55%); }
+.login-card { width: min(440px, 100%); display: grid; gap: 16px; background: white; border: 1px solid #dbe4f0; border-radius: 28px; padding: 32px; box-shadow: 0 24px 70px rgba(15,23,42,.14); }
+.login-card h1, .login-card p { margin: 0; }
+.login-card label { display: grid; gap: 6px; font-weight: 700; font-size: 13px; }
+.login-card input { border: 1px solid #dbe4f0; border-radius: 12px; padding: 11px 12px; }
+.login-button { display: flex; justify-content: center; gap: 8px; border-radius: 14px; padding: 12px; font-weight: 800; }
 
 .app-shell { display: flex; min-height: 100vh; }
 .sidebar {
@@ -33,7 +40,7 @@ nav a { color: #cbd5e1; display: flex; align-items: center; gap: 12px; padding: 
 nav a.active, nav a:hover { background: rgba(255,255,255,0.1); color: white; }
 .side-card { margin-top: auto; padding: 18px; background: rgba(255,255,255,0.08); border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); }
 .side-card p { margin: 0 0 8px; color: #cbd5e1; }
-.side-card a { color: white; font-weight: 700; }
+.side-card button { color: white; font-weight: 700; background: transparent; padding: 0; text-decoration: underline; }
 main { flex: 1; padding: 28px; overflow: auto; }
 .hero {
   display: flex;
@@ -95,6 +102,10 @@ tr:hover, .selected-row { background: #f8fafc; }
 .workflow-card h4 { margin: 12px 0 6px; }
 .workflow-card p { font-size: 14px; }
 .workflow-code { margin-top: 12px; display: grid; gap: 6px; color: #475569; font-size: 12px; }
+.trace-list { display: grid; gap: 10px; }
+.trace-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 14px; background: #f8fafc; }
+.trace-row small { display: block; color: #64748b; margin-top: 3px; }
+.trace-row span { color: #64748b; font-size: 12px; }
 .compact table { min-width: 420px; }
 .loading { min-height: 100vh; display: grid; place-items: center; font-weight: 800; color: #172033; }
 

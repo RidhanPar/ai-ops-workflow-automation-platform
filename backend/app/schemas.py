@@ -1,4 +1,6 @@
 from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -32,6 +34,7 @@ class TicketUpdate(BaseModel):
     category: str | None = None
     escalated: bool | None = None
     approval_required: bool | None = None
+    version: int | None = None
 
 
 class TicketOut(BaseModel):
@@ -52,6 +55,7 @@ class TicketOut(BaseModel):
     approval_required: bool
     ai_summary: str | None
     ai_next_action: str | None
+    version: int
     owner: AgentOut | None = None
 
     model_config = {"from_attributes": True}
@@ -79,6 +83,7 @@ class WorkflowRuleOut(BaseModel):
 
 class WorkflowRunRequest(BaseModel):
     ticket_id: int | None = None
+    idempotency_key: str = Field(min_length=8, max_length=160)
 
 
 class WorkflowRunResult(BaseModel):
@@ -93,6 +98,7 @@ class TicketAIRequest(BaseModel):
     description: str | None = None
     customer: str | None = None
     channel: str | None = None
+    allow_write_tools: bool = False
 
 
 class TicketAIResponse(BaseModel):
@@ -103,6 +109,39 @@ class TicketAIResponse(BaseModel):
     next_action: str
     confidence: float
     source: str
+    trace_id: str
+    tools_used: list[str] = Field(default_factory=list)
+    knowledge_sources: list[str] = Field(default_factory=list)
+    latency_ms: float = 0
+    estimated_cost_usd: float = 0
+    safety_flags: list[str] = Field(default_factory=list)
+
+
+class TicketAnalysis(BaseModel):
+    summary: str = Field(min_length=10, max_length=500)
+    category: Literal["billing", "technical", "policy", "workforce", "general"]
+    recommended_priority: Literal["low", "medium", "high", "critical"]
+    recommended_team: Literal[
+        "Billing Ops", "Technical Support", "Policy Ops", "Workforce Desk", "Escalations Desk", "General Support"
+    ]
+    next_action: str = Field(min_length=10, max_length=500)
+    confidence: float = Field(ge=0, le=1)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+
+
+class ApprovalDecision(BaseModel):
+    decision: Literal["approved", "rejected"]
+    reason: str = Field(min_length=3)
+
+
+class AgentRunRequest(BaseModel):
+    ticket_id: int
+    allow_write_tools: bool = False
 
 
 class KPIOverview(BaseModel):
