@@ -1,5 +1,11 @@
+from app.core.config import Settings
 from app.db import SessionLocal
 from app.models import ApprovalRequest, AuditEvent, TraceSpan
+
+
+def test_render_postgres_url_is_normalized_for_sqlalchemy():
+    settings = Settings(database_url="postgres://user:password@example.com/database")
+    assert settings.database_url.startswith("postgresql+psycopg2://")
 
 
 def test_protected_endpoint_requires_token(client):

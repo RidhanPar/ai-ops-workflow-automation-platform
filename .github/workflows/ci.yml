@@ -24,7 +24,7 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r requirements.txt
-      - run: ruff check app tests evaluations seed_demo.py
+      - run: ruff check app tests evaluations seed_demo.py start_render.py
       - run: pytest -q --cov=app --cov-report=term-missing --cov-fail-under=70
       - run: python evaluations/run_evaluations.py
       - uses: actions/upload-artifact@v7
