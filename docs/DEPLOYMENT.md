@@ -14,6 +14,12 @@ The API runs Alembic migrations before startup. Demo seeding is disabled. The fr
 
 `render.yaml` declares a PostgreSQL database, Docker backend, and static frontend. After creating the Blueprint:
 
+Live portfolio deployment:
+
+- Dashboard: <https://ridhan-ai-ops-dashboard.onrender.com>
+- API documentation: <https://ridhan-ai-ops-api.onrender.com/docs>
+- Health check: <https://ridhan-ai-ops-api.onrender.com/health>
+
 1. Install the `vector` extension on the managed PostgreSQL instance if the plan does not enable it automatically.
 2. Set `OPENAI_API_KEY` and update `VITE_API_BASE_URL`.
 3. The public portfolio blueprint runs idempotent demo seeding on startup. Set `DEMO_SEED_ENABLED=false` and remove `python seed_demo.py` from `dockerCommand` for an operational deployment.
