@@ -1,0 +1,7 @@
+[
+  {"title": "Invoice payment failed", "description": "Customer cannot complete a payment after invoice update.", "expected_category": "billing", "expected_priority": "medium"},
+  {"title": "Critical API outage", "description": "API outage is blocking all support case assignments.", "expected_category": "technical", "expected_priority": "critical"},
+  {"title": "Restricted account appeal", "description": "Customer needs a policy appeal review.", "expected_category": "policy", "expected_priority": "medium"},
+  {"title": "SLA delay needs escalation", "description": "Ticket has been waiting and is close to SLA.", "expected_category": "general", "expected_priority": "high"},
+  {"title": "Refund confirmation", "description": "Customer asks whether a refund was processed.", "expected_category": "billing", "expected_priority": "medium"}
+]

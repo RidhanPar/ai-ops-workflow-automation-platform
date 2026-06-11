@@ -1,9 +1,12 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
+from app.core.security import get_current_user
 from app.db import get_db
-from app.models import Agent, Ticket, WorkflowExecution
+from app.models import Agent, Ticket, User, WorkflowExecution
 from app.schemas import KPIOverview, TrendPoint
 from app.services.sla import get_sla_status
 
@@ -11,7 +14,7 @@ router = APIRouter(prefix="/kpis", tags=["kpis"])
 
 
 @router.get("/overview", response_model=KPIOverview)
-def overview(db: Session = Depends(get_db)):
+def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     tickets = db.query(Ticket).all()
     open_tickets = [t for t in tickets if t.status != "resolved"]
     resolved = [t for t in tickets if t.status == "resolved"]
@@ -36,7 +39,7 @@ def overview(db: Session = Depends(get_db)):
 
 
 @router.get("/trends", response_model=list[TrendPoint])
-def trends(db: Session = Depends(get_db)):
+def trends(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     since = datetime.utcnow() - timedelta(days=13)
     tickets = db.query(Ticket).filter(Ticket.created_at >= since).all()
     trend_map = defaultdict(lambda: {"created": 0, "resolved": 0})
@@ -52,11 +55,14 @@ def trends(db: Session = Depends(get_db)):
             resolved_day = ticket.resolved_at.date().isoformat()
             trend_map[resolved_day]["resolved"] += 1
 
-    return [TrendPoint(date=day, created=values["created"], resolved=values["resolved"]) for day, values in sorted(trend_map.items())]
+    return [
+        TrendPoint(date=day, created=values["created"], resolved=values["resolved"])
+        for day, values in sorted(trend_map.items())
+    ]
 
 
 @router.get("/backlog")
-def backlog(db: Session = Depends(get_db)):
+def backlog(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     tickets = db.query(Ticket).filter(Ticket.status != "resolved").all()
     by_status = defaultdict(int)
     by_priority = defaultdict(int)
@@ -73,7 +79,7 @@ def backlog(db: Session = Depends(get_db)):
 
 
 @router.get("/workforce")
-def workforce(db: Session = Depends(get_db)):
+def workforce(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     agents = db.query(Agent).order_by(Agent.team, Agent.productivity_score.desc()).all()
     return [
         {

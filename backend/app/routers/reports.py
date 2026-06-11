@@ -1,17 +1,20 @@
 import csv
-from pathlib import Path
+import io
+
 from fastapi import APIRouter, Depends
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, joinedload
+
+from app.core.security import get_current_user
 from app.db import get_db
-from app.models import Ticket
+from app.models import Ticket, User
 from app.services.sla import get_sla_status
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("/powerbi/tickets")
-def powerbi_tickets(db: Session = Depends(get_db)):
+def powerbi_tickets(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     tickets = db.query(Ticket).options(joinedload(Ticket.owner)).order_by(Ticket.created_at.desc()).all()
     return [
         {
@@ -36,17 +39,18 @@ def powerbi_tickets(db: Session = Depends(get_db)):
 
 
 @router.get("/powerbi/tickets.csv")
-def powerbi_tickets_csv(db: Session = Depends(get_db)):
+def powerbi_tickets_csv(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = powerbi_tickets(db)
-    output_path = Path("/data/powerbi_tickets_export.csv")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
+    output = io.StringIO()
     if rows:
-        with output_path.open("w", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=list(rows[0].keys()))
-            writer.writeheader()
-            writer.writerows(rows)
+        writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
     else:
-        output_path.write_text("ticket_id,external_id,title\n", encoding="utf-8")
-
-    return FileResponse(output_path, media_type="text/csv", filename="powerbi_tickets_export.csv")
+        output.write("ticket_id,external_id,title\n")
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="powerbi_tickets_export.csv"'},
+    )
