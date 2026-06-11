@@ -16,7 +16,7 @@ The API runs Alembic migrations before startup. Demo seeding is disabled. The fr
 
 1. Install the `vector` extension on the managed PostgreSQL instance if the plan does not enable it automatically.
 2. Set `OPENAI_API_KEY` and update `VITE_API_BASE_URL`.
-3. Run `DEMO_SEED_ENABLED=true python seed_demo.py` once only for a public demo.
+3. The public portfolio blueprint runs idempotent demo seeding on startup. Set `DEMO_SEED_ENABLED=false` and remove `python seed_demo.py` from `dockerCommand` for an operational deployment.
 4. Replace demo users before exposing operational data.
 
 ## Release Checklist

@@ -1,32 +1,36 @@
 databases:
-  - name: ai-ops-postgres
+  - name: ridhan-ai-ops-postgres
     databaseName: aiops
     user: aiops
     plan: free
 
 services:
   - type: web
-    name: ai-ops-api
+    name: ridhan-ai-ops-api
     runtime: docker
     rootDir: backend
     plan: free
-    dockerCommand: alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerCommand: alembic -c alembic.ini upgrade head && python seed_demo.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: ai-ops-postgres
+          name: ridhan-ai-ops-postgres
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      - key: APP_ENV
+        value: production
       - key: DEMO_SEED_ENABLED
-        value: "false"
+        value: "true"
+      - key: CORS_ORIGINS
+        value: https://ridhan-ai-ops-dashboard.onrender.com
 
   - type: web
-    name: ai-ops-dashboard
+    name: ridhan-ai-ops-dashboard
     runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://ai-ops-api.onrender.com
+        value: https://ridhan-ai-ops-api.onrender.com
