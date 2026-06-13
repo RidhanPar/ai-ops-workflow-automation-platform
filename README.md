@@ -1,6 +1,6 @@
 # AI Operations & Workflow Automation Platform
 
-**Traceable AI-agent and workflow automation platform with FastAPI, PostgreSQL, tool calling, evaluation, and human approval controls.**
+**Traceable AI-agent and workflow automation platform with FastAPI, PostgreSQL, tool orchestration, evaluation, and human approval controls.**
 
 This production-oriented portfolio project turns support tickets into auditable operational actions. A LangGraph agent retrieves knowledge, checks customer history, produces a Pydantic-validated recommendation, and can request a ticket update through a human approval gate. Configurable workflows route tickets, notify teams, and queue sensitive escalations without silently executing them.
 
@@ -12,7 +12,7 @@ This production-oriented portfolio project turns support tickets into auditable 
 
 | Capability | Evidence |
 |---|---|
-| Agent routing and tools | [`backend/app/services/agent.py`](backend/app/services/agent.py) |
+| LangGraph agent and explicit tools | [`backend/app/services/agent.py`](backend/app/services/agent.py) |
 | RAG/vector search | [`backend/app/services/knowledge.py`](backend/app/services/knowledge.py), pgvector migration |
 | Authentication and RBAC | [`backend/app/core/security.py`](backend/app/core/security.py) |
 | Audit, approvals, idempotency | [`backend/app/services/audit.py`](backend/app/services/audit.py), [`backend/app/services/workflows.py`](backend/app/services/workflows.py) |
@@ -23,7 +23,7 @@ This production-oriented portfolio project turns support tickets into auditable 
 
 ## Implemented Production Signals
 
-- LangGraph orchestration with explicit `search_knowledge_base`, `get_customer_history`, and approval-gated `update_ticket` tools.
+- LangGraph orchestration with explicit `search_knowledge_base`, `get_customer_history`, and approval-gated update-request tools.
 - Pydantic structured output validation with separate invalid-output, provider-failure, and unexpected-failure fallbacks.
 - PostgreSQL pgvector HNSW index with deterministic local-vector fallback for zero-cost demos and SQLite tests.
 - JWT authentication and viewer/operator/manager/admin role-based access control.
@@ -184,4 +184,4 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 
 ## Resume Bullet
 
-Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an OpenAI assistant; added tool-level traces, automated LLM evaluations, CI tests, and approval controls.
+Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an optional OpenAI assistant; added LangGraph tool orchestration, automated evaluations, trace evidence, CI tests, and approval controls.
