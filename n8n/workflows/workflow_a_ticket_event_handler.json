@@ -1,0 +1,162 @@
+{
+  "name": "Workflow A - Ticket Event Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ticket-event",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "f3a1b2c4-1001-4001-a001-000000000001",
+      "name": "Webhook - Ticket Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "aiops-ticket-event-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-high",
+              "leftValue": "={{ $json.body.priority }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-critical",
+              "leftValue": "={{ $json.body.priority }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "f3a1b2c4-1001-4001-a001-000000000002",
+      "name": "Priority Router",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/YOUR_UNIQUE_ID_HERE",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Alert-Source",
+              "value": "aiops-n8n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"alert_level\": \"URGENT\",\n  \"ticket_id\": {{ $json.body.ticket_id }},\n  \"priority\": \"{{ $json.body.priority }}\",\n  \"category\": \"{{ $json.body.category }}\",\n  \"customer\": \"{{ $json.body.customer }}\",\n  \"message\": \"High-priority ticket requires immediate attention\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "f3a1b2c4-1001-4001-a001-000000000003",
+      "name": "Notify - High or Critical",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/YOUR_UNIQUE_ID_HERE",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Alert-Source",
+              "value": "aiops-n8n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"log_level\": \"INFO\",\n  \"ticket_id\": {{ $json.body.ticket_id }},\n  \"priority\": \"{{ $json.body.priority }}\",\n  \"category\": \"{{ $json.body.category }}\",\n  \"customer\": \"{{ $json.body.customer }}\",\n  \"message\": \"Low-priority ticket logged for standard queue processing\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "f3a1b2c4-1001-4001-a001-000000000004",
+      "name": "Log - Low or Medium",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [760, 440]
+    }
+  ],
+  "connections": {
+    "Webhook - Ticket Event": {
+      "main": [
+        [
+          {
+            "node": "Priority Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Priority Router": {
+      "main": [
+        [
+          {
+            "node": "Notify - High or Critical",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log - Low or Medium",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a-v1-ticket-event-handler",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aiops-local"
+  },
+  "id": "workflow-a-ticket-handler",
+  "tags": [
+    { "id": "tag-aiops", "name": "aiops" },
+    { "id": "tag-tickets", "name": "tickets" }
+  ]
+}

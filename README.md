@@ -23,6 +23,7 @@ It demonstrates:
 - Backend: Python, FastAPI, SQLAlchemy, PostgreSQL
 - Frontend: React, Vite, Recharts
 - AI: OpenAI Python SDK using the Responses API
+- Workflow Automation: n8n (webhook trigger, scheduled trigger, IF branching, HTTP Request, Code nodes)
 - DevOps: Docker, Docker Compose
 - BI: CSV export files and API endpoints for Power BI
 
@@ -60,6 +61,67 @@ It demonstrates:
 - CSV export files in `/data`
 - Backend API endpoint: `/reports/powerbi/tickets`
 - Can be connected to Power BI using Web connector or CSV import
+
+## n8n Workflow Automation
+
+The `n8n/` directory contains two real n8n workflows that connect to the backend, exported as importable JSON, plus a Docker Compose file to run n8n locally.
+
+### What is included
+
+| File | Description |
+|---|---|
+| `n8n/workflows/workflow_a_ticket_event_handler.json` | Webhook-triggered workflow that routes ticket events by priority |
+| `n8n/workflows/workflow_b_scheduled_report_digest.json` | Daily scheduled workflow that fetches and summarizes the ticket report |
+| `n8n/docker-compose.n8n.yml` | Runs the official n8n Docker image joined to the backend network |
+| `n8n/SETUP.md` | Full setup guide with import steps and test commands |
+
+### Workflow A - Ticket Event Handler
+
+Triggered by a POST to the n8n webhook endpoint at `/webhook/ticket-event`. Expects a JSON body with `ticket_id`, `priority`, `category`, and `customer`.
+
+An IF node branches on the `priority` field:
+
+- **high or critical**: posts an `alert_level: URGENT` payload to a mock notification endpoint (webhook.site)
+- **low or medium**: posts a `log_level: INFO` payload to the same mock endpoint for queue logging
+
+```
+[Webhook POST /ticket-event]
+        |
+[Priority Router - IF node]
+     /        \
+(high/crit)  (low/med)
+     |              |
+[Notify endpoint] [Log endpoint]
+```
+
+This workflow is the n8n equivalent of the backend's rule-based `notify` action in `services/workflows.py`. You can POST to the n8n webhook URL directly from curl or from a custom notify action in the backend.
+
+### Workflow B - Scheduled Report Digest
+
+Runs daily at 08:00 UTC via cron trigger `0 8 * * *`.
+
+1. Calls `GET http://aiops_backend:8000/reports/powerbi/tickets` (the same endpoint used by Power BI)
+2. Aggregates the response in a JavaScript Code node: total tickets, open count, escalated count, SLA breach count, breakdown by priority / status / category, and an alert message
+3. Posts the full digest JSON to the mock endpoint with header `X-Report-Source: aiops-n8n-digest`
+
+```
+[Schedule - daily 08:00 UTC]
+        |
+[GET /reports/powerbi/tickets]
+        |
+[Build Digest Summary - Code node]
+        |
+[POST digest to mock endpoint]
+```
+
+### Quick start for n8n
+
+1. Start the main platform stack: `docker compose up -d`
+2. Replace `YOUR_UNIQUE_ID_HERE` in both workflow JSON files with a URL from https://webhook.site
+3. Start n8n: `docker compose -f n8n/docker-compose.n8n.yml up -d`
+4. Open http://localhost:5678, create an owner account, import both workflow files, and activate them
+
+See `n8n/SETUP.md` for detailed instructions and test commands.
 
 ## Quick Start
 

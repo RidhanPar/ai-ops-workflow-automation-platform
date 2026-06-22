@@ -1,0 +1,140 @@
+{
+  "name": "Workflow B - Scheduled Report Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "f3a1b2c4-2002-4002-b002-000000000001",
+      "name": "Schedule - Daily 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://aiops_backend:8000/reports/powerbi/tickets",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "f3a1b2c4-2002-4002-b002-000000000002",
+      "name": "Fetch Ticket Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const tickets = items.map(i => i.json);\n\nconst total = tickets.length;\n\nconst byPriority = tickets.reduce((acc, t) => {\n  acc[t.priority] = (acc[t.priority] || 0) + 1;\n  return acc;\n}, {});\n\nconst byStatus = tickets.reduce((acc, t) => {\n  acc[t.status] = (acc[t.status] || 0) + 1;\n  return acc;\n}, {});\n\nconst byCategory = tickets.reduce((acc, t) => {\n  acc[t.category] = (acc[t.category] || 0) + 1;\n  return acc;\n}, {});\n\nconst breached = tickets.filter(t => t.sla_status === 'breached').length;\nconst atRisk = tickets.filter(t => t.sla_status === 'at_risk').length;\nconst escalated = tickets.filter(t => t.escalated === true).length;\nconst open = tickets.filter(t => t.status === 'open' || t.status === 'in_progress').length;\n\nconst digest = {\n  report_generated_at: new Date().toISOString(),\n  summary: {\n    total_tickets: total,\n    open_tickets: open,\n    escalated_tickets: escalated,\n    sla_breached: breached,\n    sla_at_risk: atRisk\n  },\n  breakdown: {\n    by_priority: byPriority,\n    by_status: byStatus,\n    by_category: byCategory\n  },\n  alert: breached > 0\n    ? `ACTION REQUIRED: ${breached} ticket(s) have breached SLA.`\n    : atRisk > 0\n    ? `WARNING: ${atRisk} ticket(s) are at risk of SLA breach.`\n    : 'All tickets within SLA targets.'\n};\n\nreturn [{ json: digest }];"
+      },
+      "id": "f3a1b2c4-2002-4002-b002-000000000003",
+      "name": "Build Digest Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webhook.site/YOUR_UNIQUE_ID_HERE",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Report-Source",
+              "value": "aiops-n8n-digest"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "f3a1b2c4-2002-4002-b002-000000000004",
+      "name": "Post Digest to Endpoint",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "Schedule - Daily 08:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch Ticket Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Ticket Report": {
+      "main": [
+        [
+          {
+            "node": "Build Digest Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Digest Summary": {
+      "main": [
+        [
+          {
+            "node": "Post Digest to Endpoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b-v1-scheduled-report-digest",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aiops-local"
+  },
+  "id": "workflow-b-report-digest",
+  "tags": [
+    { "id": "tag-aiops", "name": "aiops" },
+    { "id": "tag-reports", "name": "reports" }
+  ]
+}
