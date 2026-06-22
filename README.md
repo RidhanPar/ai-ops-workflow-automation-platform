@@ -1,66 +1,90 @@
 # AI Operations & Workflow Automation Platform
 
-A portfolio-ready enterprise MVP for support operations teams. It combines SLA monitoring, ticket management, workflow automation, AI ticket assistance, KPI dashboards, and Power BI-ready reporting exports.
+**Traceable AI-agent and workflow automation platform with FastAPI, PostgreSQL, tool orchestration, evaluation, and human approval controls.**
 
-## Why this project is strong for Latvia job applications
+This production-oriented portfolio project turns support tickets into auditable operational actions. A LangGraph agent retrieves knowledge, checks customer history, produces a Pydantic-validated recommendation, and can request a ticket update through a human approval gate. Configurable workflows route tickets, notify teams, and queue sensitive escalations without silently executing them.
 
-This project matches roles such as Data Analyst, BI Analyst, Operations Analyst, Workforce Management Analyst, Real-Time Analyst, Process Improvement Specialist, Business Analyst, Junior Data Scientist, and AI Automation Specialist.
+[Live dashboard](https://ridhan-ai-ops-dashboard.onrender.com) · [API documentation](https://ridhan-ai-ops-api.onrender.com/docs) · [API health](https://ridhan-ai-ops-api.onrender.com/health)
 
-It demonstrates:
+![Secure agent dashboard](assets/screenshots/secure-agent-dashboard.png)
 
-- Support operations domain knowledge
-- SLA and backlog monitoring
-- Ticket routing and escalation logic
-- AI-assisted summarization and operational recommendations
-- Workflow automation inspired by n8n concepts
-- KPI dashboarding and reporting
-- PostgreSQL data modelling
-- Docker-based deployment
-- Power BI export readiness
+## Reviewer Guide
 
-## Tech Stack
+| Capability | Evidence |
+|---|---|
+| LangGraph agent and explicit tools | [`backend/app/services/agent.py`](backend/app/services/agent.py) |
+| RAG/vector search | [`backend/app/services/knowledge.py`](backend/app/services/knowledge.py), pgvector migration |
+| Authentication and RBAC | [`backend/app/core/security.py`](backend/app/core/security.py) |
+| Audit, approvals, idempotency | [`backend/app/services/audit.py`](backend/app/services/audit.py), [`backend/app/services/workflows.py`](backend/app/services/workflows.py) |
+| Tracing, latency, cost | [`backend/app/core/observability.py`](backend/app/core/observability.py), dashboard trace panel |
+| LLM evaluation | [`backend/evaluations/`](backend/evaluations/) |
+| CI and tests | [`backend/tests/`](backend/tests/), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| Migrations and production deployment | [`backend/migrations/`](backend/migrations/), [`docker-compose.prod.yml`](docker-compose.prod.yml), [`render.yaml`](render.yaml) |
+| n8n workflow integration | [`n8n/`](n8n/) |
 
-- Backend: Python, FastAPI, SQLAlchemy, PostgreSQL
-- Frontend: React, Vite, Recharts
-- AI: OpenAI Python SDK using the Responses API
-- Workflow Automation: n8n (webhook trigger, scheduled trigger, IF branching, HTTP Request, Code nodes)
-- DevOps: Docker, Docker Compose
-- BI: CSV export files and API endpoints for Power BI
+## Implemented Production Signals
 
-## Main Features
+- LangGraph orchestration with explicit `search_knowledge_base`, `get_customer_history`, and approval-gated update-request tools.
+- Pydantic structured output validation with separate invalid-output, provider-failure, and unexpected-failure fallbacks.
+- PostgreSQL pgvector HNSW index with deterministic local-vector fallback for zero-cost demos and SQLite tests.
+- JWT authentication and viewer/operator/manager/admin role-based access control.
+- Human approvals for sensitive agent and workflow actions.
+- Idempotency keys, optimistic ticket versions, and persistent audit events.
+- Trace IDs on every request, persisted workflow/agent/LLM spans, structured JSON logs, latency, token, and cost fields.
+- Golden-dataset evaluation for routing, priority, schema, prompt injection, fallback, latency, and cost.
+- Alembic migrations, separate demo seeding, development and production Docker Compose profiles.
+- GitHub Actions for linting, tests/coverage, evaluation, frontend build, migrations, and container configuration.
+- n8n webhook and scheduled workflows with branching logic connected to the backend API.
 
-### Ticket Management
+## Architecture
 
-- Create, update, and view support tickets
-- Priority, channel, status, owner, customer, SLA due time
-- SLA breach risk detection
-- Backlog visibility
+```mermaid
+flowchart LR
+    UI[React operations dashboard] -->|JWT + trace ID| API[FastAPI API]
+    API --> AUTH[RBAC and governance]
+    API --> AGENT[LangGraph ticket agent]
+    AGENT --> KB[search_knowledge_base]
+    AGENT --> HISTORY[get_customer_history]
+    AGENT --> LLM[Pydantic-validated LLM analysis]
+    AGENT --> APPROVAL[update_ticket approval request]
+    API --> ENGINE[Idempotent workflow engine]
+    ENGINE --> APPROVAL
+    API --> DB[(PostgreSQL + pgvector)]
+    AGENT --> DB
+    ENGINE --> DB
+    DB --> TRACE[Audit events and execution traces]
+    TRACE --> UI
+    ENGINE -->|webhook POST| N8N[n8n workflows]
+    N8N -->|GET /reports/powerbi/tickets| API
+```
 
-### AI Ticket Assistant
+## Five-Minute Quick Start
 
-- Summarizes ticket content
-- Suggests priority, category, routing team, and next action
-- Provides a fallback rules-based response when no API key is configured
+Requirements: Docker Desktop and Docker Compose.
 
-### Workflow Automation
+```bash
+git clone https://github.com/RidhanPar/ai-ops-workflow-automation-platform.git
+cd ai-ops-workflow-automation-platform
+cp .env.example .env
+docker compose up --build
+```
 
-- Rule-based workflow engine inspired by n8n-style automation
-- Triggers based on priority, status, SLA risk, channel, and category
-- Actions such as assign team, escalate, send notification, and mark approval required
+Open:
 
-### Operations Dashboard
+- Dashboard: `http://localhost:5173`
+- OpenAPI: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/health`
 
-- Real-time KPI cards
-- Ticket trend chart
-- SLA performance view
-- Backlog by status and priority
-- Workforce productivity table
+Demo users:
 
-### Power BI Reporting
+| Username | Password | Role |
+|---|---|---|
+| `viewer` | `viewer-demo` | Read-only |
+| `operator` | `operator-demo` | Analyze tickets and run workflows |
+| `manager` | `manager-demo` | Review approvals and create workflows |
+| `admin` | `admin-demo` | Full access |
 
-- CSV export files in `/data`
-- Backend API endpoint: `/reports/powerbi/tickets`
-- Can be connected to Power BI using Web connector or CSV import
+Do not use demo credentials or the example JWT secret outside local development.
 
 ## n8n Workflow Automation
 
@@ -94,7 +118,7 @@ An IF node branches on the `priority` field:
 [Notify endpoint] [Log endpoint]
 ```
 
-This workflow is the n8n equivalent of the backend's rule-based `notify` action in `services/workflows.py`. You can POST to the n8n webhook URL directly from curl or from a custom notify action in the backend.
+This workflow is the n8n equivalent of the backend rule-based `notify` action in `services/workflows.py`. You can POST to the n8n webhook URL directly from curl or from a custom notify action in the backend.
 
 ### Workflow B - Scheduled Report Digest
 
@@ -123,83 +147,106 @@ Runs daily at 08:00 UTC via cron trigger `0 8 * * *`.
 
 See `n8n/SETUP.md` for detailed instructions and test commands.
 
-## Quick Start
+## API Examples
 
-### 1. Clone or unzip the project
-
-```bash
-cd ai-ops-automation-platform
-cp .env.example .env
-```
-
-### 2. Optional: add OpenAI API key
-
-Open `.env` and add:
+Get a token:
 
 ```bash
-OPENAI_API_KEY=your_api_key_here
+curl -X POST http://localhost:8000/auth/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=operator&password=operator-demo"
 ```
 
-Without this key, the project still works using a local fallback assistant.
-
-### 3. Start with Docker
+Run the agent and request a governed ticket update:
 
 ```bash
-docker compose up --build
+curl -X POST http://localhost:8000/ai/analyze-ticket \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Trace-ID: reviewer-demo-001" \
+  -d '{"ticket_id":2,"allow_write_tools":true}'
 ```
 
-### 4. Open the apps
+Run workflows with retry-safe idempotency:
 
-- Frontend: http://localhost:5173
-- Backend API docs: http://localhost:8000/docs
+```bash
+curl -X POST http://localhost:8000/workflows/run \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ticket_id":2,"idempotency_key":"reviewer-run-2026-001"}'
+```
 
-### 5. Seed demo data
+## Evaluation Results
 
-When the backend starts, it automatically creates demo tickets, agents, and workflows if the database is empty.
+Run locally:
 
-## Useful API Endpoints
+```bash
+cd backend
+python evaluations/run_evaluations.py
+```
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| GET | `/health` | App health check |
-| GET | `/tickets` | List tickets |
-| POST | `/tickets` | Create a ticket |
-| PATCH | `/tickets/{ticket_id}` | Update ticket |
-| POST | `/ai/analyze-ticket` | AI summary and next-action recommendation |
-| GET | `/kpis/overview` | Dashboard KPIs |
-| GET | `/kpis/trends` | Ticket trend data |
-| GET | `/workflows` | List automation workflows |
-| POST | `/workflows/run` | Run automation rules manually |
-| GET | `/reports/powerbi/tickets` | Power BI-ready ticket dataset |
+| Quality gate | Required |
+|---|---:|
+| Routing accuracy | >= 80% |
+| Priority accuracy | >= 80% |
+| JSON schema validity | 100% |
+| Prompt-injection detection | Pass |
+| Fallback availability | Pass |
+| Local average latency | < 50 ms |
+| Local evaluation cost | USD 0 |
 
-## Portfolio Description
+CI publishes `backend/evaluations/results.json` as an artifact. The local deterministic fallback is evaluated separately from paid-provider behavior so the demo remains reproducible.
 
-AI Operations & Workflow Automation Platform
+## Security and Governance
 
-Tech: Python, FastAPI, React, PostgreSQL, Docker, OpenAI API, Power BI
+- Ticket and knowledge text is treated as untrusted data.
+- Agent recommendations never directly perform sensitive escalations or ticket changes; they create approval requests.
+- RBAC protects operational writes and approval decisions.
+- Optimistic versions reject stale ticket updates.
+- Idempotency keys prevent duplicate workflow execution.
+- Every governed action records actor, trace ID, resource, before/after state, and timestamp.
+- Secrets are environment variables and production Compose requires explicit values.
 
-- Developed an AI-driven operations and workflow automation platform focused on SLA monitoring, ticket management, and process optimization within support operations environments.
-- Built workflow automation modules inspired by n8n concepts to automate ticket routing, escalation handling, notifications, and approval processes.
-- Integrated AI-powered ticket summarization and operational assistance using OpenAI APIs to improve issue analysis and knowledge retrieval efficiency.
-- Designed interactive dashboards for monitoring KPIs, backlog trends, SLA performance, workforce productivity, and operational insights in real time.
-- Implemented analytics and reporting features to support workload visibility and data-driven operational decision-making.
+Read the threat model and operating controls in [`docs/SECURITY_AND_GOVERNANCE.md`](docs/SECURITY_AND_GOVERNANCE.md).
 
-## Resume Version
+## Development
 
-AI Operations & Workflow Automation Platform | Python, FastAPI, React, PostgreSQL, Docker, OpenAI API, Power BI
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+alembic -c alembic.ini upgrade head
+DEMO_SEED_ENABLED=true python seed_demo.py
+pytest -q
+ruff check app tests evaluations seed_demo.py
+```
 
-- Built an AI-driven operations platform for SLA monitoring, ticket routing, backlog visibility, and workflow automation in support operations.
-- Created FastAPI services and PostgreSQL models for tickets, agents, SLA risk, workflow rules, and operational KPI reporting.
-- Integrated OpenAI-powered ticket summarization and recommendation features with a fallback rules engine for local demos.
-- Designed React dashboards showing SLA performance, backlog trends, ticket volume, workload distribution, and agent productivity.
-- Added Power BI-ready reporting exports to support real-time operational visibility and data-driven decision-making.
+```bash
+cd frontend
+npm ci
+npm run build
+```
 
-## Suggested GitHub Repository Name
+## Production Deployment
 
-`ai-ops-workflow-automation-platform`
+Use `docker-compose.prod.yml` for a self-hosted deployment or `render.yaml` as a Render Blueprint. Production mode uses:
 
-## Suggested Live Deployment
+- `pgvector/pgvector:pg16`
+- Alembic migrations before API startup
+- Required database credentials, JWT secret, CORS origins, and public API URL
+- Nginx-served static React build
+- No automatic demo seeding
 
-- Frontend: Vercel or Netlify
-- Backend: Render, Railway, Fly.io, or Azure App Service
-- Database: Neon PostgreSQL, Supabase, Railway PostgreSQL, or Render PostgreSQL
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+## Limits
+
+- The knowledge corpus and ticket data are fictional demo data.
+- The local deterministic embedding is designed for reproducibility, not semantic-search benchmark performance.
+- A real deployment should use managed secrets, SSO/OIDC, external telemetry export, backups, rate limiting, and organization-specific evaluation data.
+- Human approval is a demonstration control and must be adapted to real authorization policy.
+
+## Resume Bullet
+
+Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an optional OpenAI assistant; added LangGraph tool orchestration, automated evaluations, trace evidence, CI tests, and approval controls.

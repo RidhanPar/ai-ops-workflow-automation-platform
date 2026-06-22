@@ -1,33 +1,30 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app.core.security import get_current_user
 from app.db import get_db
-from app.models import Ticket
+from app.models import Ticket, User
 from app.schemas import TicketAIRequest, TicketAIResponse
-from app.services.ai import analyze_ticket
+from app.services.agent import run_ticket_agent
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
 @router.post("/analyze-ticket", response_model=TicketAIResponse)
-def analyze_ticket_endpoint(payload: TicketAIRequest, db: Session = Depends(get_db)):
+def analyze_ticket_endpoint(
+    payload: TicketAIRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     if payload.ticket_id:
         ticket = db.query(Ticket).filter(Ticket.id == payload.ticket_id).first()
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found")
-        result = analyze_ticket(ticket.title, ticket.description, ticket.customer, ticket.channel)
-        ticket.ai_summary = result["summary"]
-        ticket.ai_next_action = result["next_action"]
-        ticket.category = result.get("category", ticket.category)
-        ticket.priority = result.get("recommended_priority", ticket.priority)
-        db.commit()
-        return result
+        return run_ticket_agent(db, ticket, user.username, payload.allow_write_tools)
 
     if not payload.title or not payload.description:
         raise HTTPException(status_code=400, detail="Provide ticket_id or title and description")
 
-    return analyze_ticket(
-        title=payload.title,
-        description=payload.description,
-        customer=payload.customer or "Unknown",
-        channel=payload.channel or "email",
+    raise HTTPException(
+        status_code=400, detail="Ad-hoc analysis is disabled; create a ticket for an auditable agent run"
     )

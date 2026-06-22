@@ -1,0 +1,38 @@
+databases:
+  - name: ridhan-ai-ops-postgres
+    databaseName: aiops
+    user: aiops
+    plan: free
+
+services:
+  - type: web
+    name: ridhan-ai-ops-api
+    runtime: docker
+    rootDir: backend
+    plan: free
+    dockerCommand: python start_render.py
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ridhan-ai-ops-postgres
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: DEMO_SEED_ENABLED
+        value: "true"
+      - key: CORS_ORIGINS
+        value: https://ridhan-ai-ops-dashboard.onrender.com
+
+  - type: web
+    name: ridhan-ai-ops-dashboard
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://ridhan-ai-ops-api.onrender.com

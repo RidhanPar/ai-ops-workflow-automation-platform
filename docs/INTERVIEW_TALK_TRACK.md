@@ -1,28 +1,29 @@
 # Interview Talk Track
 
-## 30-second explanation
+## 30-Second Explanation
 
-I built an AI Operations and Workflow Automation Platform for support operations teams. It monitors SLA risk, ticket backlog, workforce productivity, and operational KPIs. It also includes an n8n-inspired workflow engine that can automatically route, escalate, notify, and mark tickets for approval. I integrated an AI ticket assistant using OpenAI APIs to summarize issues and recommend next actions.
+I built an operations automation platform that combines deterministic workflow rules with a governed LangGraph ticket agent. The agent retrieves relevant knowledge, checks customer history, produces a Pydantic-validated recommendation, and creates an approval request before any sensitive ticket change. The platform records trace IDs, audit events, latency, token usage, and estimated cost.
 
-## Why I built it
+## What Is Actually Running
 
-I wanted to show a project that connects data analytics, support operations, process improvement, workflow automation, and AI assistance. It is directly relevant for operations analyst, WFM, real-time analyst, BI analyst, and AI automation roles.
+- FastAPI API, React dashboard, PostgreSQL/pgvector deployment, and JWT role controls.
+- LangGraph nodes that explicitly invoke knowledge-search and customer-history tools.
+- Optional OpenAI Responses API analysis when a key is configured.
+- Deterministic local fallback so the demo and evaluations remain reproducible.
+- Approval-gated workflow actions, idempotency keys, audit events, and execution traces.
 
-## Best technical points to explain
+## Important Distinction
 
-- FastAPI backend with clean routers and service layers
-- PostgreSQL schema for tickets, agents, workflow rules, workflow executions, and notifications
-- SLA status calculation using due time and resolution time
-- Workflow engine using trigger-action rules
-- AI assistant with OpenAI integration and local fallback logic
-- React dashboard with KPI cards and charts
-- Power BI-ready API and CSV exports
-- Docker Compose setup for full local deployment
+The current model produces structured recommendations; it does not independently choose arbitrary functions. Tool execution is explicit in the LangGraph workflow, and sensitive writes create approval requests. This makes the behavior easier to test and defend than unrestricted autonomous execution.
 
-## Best business points to explain
+## Design Decisions To Explain
 
-- Reduces manual ticket triage
-- Improves SLA visibility
-- Helps operations teams identify backlog risk earlier
-- Supports data-driven workload decisions
-- Converts support data into dashboard and BI insights
+- Why untrusted ticket text is separated from system instructions.
+- Why local fallback behavior is labeled and evaluated separately from provider behavior.
+- Why pgvector is used in PostgreSQL while SQLite tests use deterministic local vectors.
+- Why write-capable actions require approval, idempotency, and optimistic versions.
+- Why traces include source, tools used, latency, token usage, and estimated cost.
+
+## Honest Limits
+
+The deployed data and knowledge corpus are fictional. A real implementation would replace demo users with SSO/OIDC, use organization-specific evaluations, export telemetry, add rate limiting and backups, and adapt approval policy to the business.
