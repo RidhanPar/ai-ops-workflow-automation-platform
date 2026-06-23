@@ -4,7 +4,6 @@ import uuid
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.core.config import get_settings
