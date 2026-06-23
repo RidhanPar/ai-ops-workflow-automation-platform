@@ -1,0 +1,47 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: aiops_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - aiops_network
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: aiops_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/aiops.json
+    volumes:
+      - ./monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/aiops.json:ro
+      - ./monitoring/grafana-provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - aiops_network
+
+networks:
+  aiops_network:
+    external: true
+    name: ai-ops-automation-platform_default
+
+volumes:
+  prometheus_data:
+  grafana_data:

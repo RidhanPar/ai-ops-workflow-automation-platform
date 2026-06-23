@@ -12,6 +12,12 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from app.core.config import get_settings
 from app.core.logging import logger
+from app.core.metrics import (
+    agentic_requests_total,
+    human_approval_gates_triggered_total,
+    llm_call_latency_seconds,
+    llm_tokens_used_total,
+)
 from app.core.observability import current_trace_id, traced_span
 from app.models import ApprovalRequest, Ticket, TraceSpan
 from app.schemas import TicketAnalysis
@@ -98,6 +104,7 @@ def request_ticket_update(db: Session, ticket: Ticket, analysis: TicketAnalysis,
     ticket.approval_required = True
     db.add(request)
     record_audit(db, requested_by, "approval.requested", "ticket", ticket.id, after={"approval_id": request.id})
+    human_approval_gates_triggered_total.labels(action_type="agent_update_ticket").inc()
     return request
 
 
@@ -163,6 +170,7 @@ def run_ticket_agent(db: Session, ticket: Ticket, actor: str, allow_write_tools:
     with traced_span(db, "ticket_agent", "agent", {"ticket_id": ticket.id}):
         state = graph.compile().invoke({"ticket": ticket, "allow_write_tools": allow_write_tools})
         source, usage = "local_fallback_rules", {"input_tokens": 0, "output_tokens": 0}
+        llm_started = time.perf_counter()
         try:
             if settings.openai_api_key:
                 analysis, usage = _openai_analysis(state["analysis"]["prompt"])
@@ -189,6 +197,12 @@ def run_ticket_agent(db: Session, ticket: Ticket, actor: str, allow_write_tools:
                 _fallback_analysis(ticket.title, ticket.description, ticket.channel),
                 "fallback_unexpected_failure",
             )
+        finally:
+            llm_call_latency_seconds.labels(source=source).observe(time.perf_counter() - llm_started)
+
+        agentic_requests_total.labels(source=source).inc()
+        llm_tokens_used_total.labels(direction="input").inc(usage["input_tokens"])
+        llm_tokens_used_total.labels(direction="output").inc(usage["output_tokens"])
 
         ticket.ai_summary = analysis.summary
         ticket.ai_next_action = analysis.next_action

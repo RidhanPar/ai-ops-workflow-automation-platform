@@ -5,6 +5,8 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from prometheus_fastapi_instrumentator import Instrumentator
+
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.observability import trace_id_context
@@ -29,6 +31,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 configure_telemetry(app)
+
+# Expose /metrics for Prometheus scraping. Excluded handlers are not counted
+# in http_requests_total to avoid inflating request rate with scrape traffic.
+Instrumentator(
+    should_group_status_codes=True,
+    excluded_handlers=["/metrics", "/health"],
+).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 @app.middleware("http")

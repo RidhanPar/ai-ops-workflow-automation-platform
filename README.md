@@ -21,6 +21,7 @@ This production-oriented portfolio project turns support tickets into auditable 
 | CI and tests | [`backend/tests/`](backend/tests/), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 | Migrations and production deployment | [`backend/migrations/`](backend/migrations/), [`docker-compose.prod.yml`](docker-compose.prod.yml), [`render.yaml`](render.yaml) |
 | n8n workflow integration | [`n8n/`](n8n/) |
+| Prometheus metrics and Grafana dashboard | [`monitoring/`](monitoring/), [`docker-compose.monitoring.yml`](docker-compose.monitoring.yml) |
 
 ## Implemented Production Signals
 
@@ -146,6 +147,60 @@ Runs daily at 08:00 UTC via cron trigger `0 8 * * *`.
 4. Open http://localhost:5678, create an owner account, import both workflow files, and activate them
 
 See `n8n/SETUP.md` for detailed instructions and test commands.
+
+## Observability
+
+The platform exposes a Prometheus `/metrics` endpoint and ships a pre-built Grafana dashboard covering the four signals that matter most for an AI operations backend.
+
+### Metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `http_requests_total` | Counter | method, handler, status_code | All HTTP requests (via prometheus-fastapi-instrumentator) |
+| `http_request_duration_seconds` | Histogram | method, handler | HTTP request latency with p50/p95 breakdowns |
+| `agentic_requests_total` | Counter | source | Total LangGraph agent invocations by analysis path |
+| `llm_call_latency_seconds` | Histogram | source | Per-LLM-call latency in seconds |
+| `llm_tokens_used_total` | Counter | direction (input/output) | Cumulative token consumption |
+| `human_approval_gates_triggered_total` | Counter | action_type | Agent and workflow approval gate triggers |
+
+### Dashboard panels
+
+![Grafana dashboard placeholder](assets/screenshots/grafana-dashboard.png)
+
+The pre-built Grafana dashboard (`monitoring/grafana-dashboard.json`) contains five panels:
+
+1. **HTTP Request Rate** - `rate(http_requests_total[5m])` grouped by method and handler
+2. **HTTP Latency p95 and p50** - `histogram_quantile` over `http_request_duration_seconds`
+3. **LLM Token Usage Rate** - stacked input/output token throughput per second
+4. **Approval Gate Triggers** - bar chart of `human_approval_gates_triggered_total` by action type
+5. **Cumulative Totals** - stat panel showing lifetime agent invocations, approval gates, and token totals
+
+### Spin up the monitoring stack
+
+Start the main platform first, then:
+
+```bash
+docker compose -f docker-compose.monitoring.yml up -d
+```
+
+Open:
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3001` (login: admin / admin)
+
+The Prometheus datasource and the AI Ops dashboard are provisioned automatically on first start. No manual import needed.
+
+To verify metrics are being collected:
+
+```bash
+curl http://localhost:8000/metrics | grep agentic_requests_total
+```
+
+To stop the monitoring stack:
+
+```bash
+docker compose -f docker-compose.monitoring.yml down
+```
 
 ## API Examples
 

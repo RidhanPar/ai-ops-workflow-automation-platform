@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.metrics import human_approval_gates_triggered_total
 from app.core.observability import current_trace_id, traced_span
 from app.models import Agent, ApprovalRequest, Notification, Ticket, WorkflowExecution, WorkflowRule
 from app.services.audit import record_audit
@@ -62,10 +63,12 @@ def apply_action(db: Session, ticket: Ticket, action: dict, actor: str = "workfl
             )
         )
         ticket.approval_required = True
+        human_approval_gates_triggered_total.labels(action_type="workflow_escalate").inc()
         return "Escalation queued for human approval"
 
     if action_type == "approval_required":
         ticket.approval_required = True
+        human_approval_gates_triggered_total.labels(action_type="approval_required").inc()
         return "Approval required flag enabled"
 
     if action_type == "notify":
