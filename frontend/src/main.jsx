@@ -207,6 +207,7 @@ function App() {
   const [role, setRole] = useState(localStorage.getItem('aiops_role'));
   const [traces, setTraces] = useState([]);
   const [approvals, setApprovals] = useState([]);
+  const [page, setPage] = useState('dashboard');
 
   async function loadData() {
     setLoading(true);
@@ -318,11 +319,11 @@ function App() {
           </div>
         </div>
         <nav>
-          <a className="active"><LayoutDashboard size={18} /> Dashboard</a>
-          <a><Ticket size={18} /> Tickets</a>
-          <a><GitBranch size={18} /> Workflows</a>
-          <a><Bot size={18} /> AI Assistant</a>
-          <a><Users size={18} /> Workforce</a>
+          <a className={page === 'dashboard' ? 'active' : ''} onClick={() => setPage('dashboard')}><LayoutDashboard size={18} /> Dashboard</a>
+          <a className={page === 'tickets' ? 'active' : ''} onClick={() => setPage('tickets')}><Ticket size={18} /> Tickets</a>
+          <a className={page === 'workflows' ? 'active' : ''} onClick={() => setPage('workflows')}><GitBranch size={18} /> Workflows</a>
+          <a className={page === 'ai' ? 'active' : ''} onClick={() => setPage('ai')}><Bot size={18} /> AI Assistant</a>
+          <a className={page === 'workforce' ? 'active' : ''} onClick={() => setPage('workforce')}><Users size={18} /> Workforce</a>
         </nav>
         <div className="side-card">
           <p>Power BI Dataset</p>
@@ -347,73 +348,253 @@ function App() {
 
         {toast && <div className="toast">{toast}</div>}
 
-        <div className="stats-grid">
-          <StatCard title="Total Tickets" value={overview?.total_tickets ?? 0} helper="All support cases" icon={Ticket} />
-          <StatCard title="Open Backlog" value={overview?.open_tickets ?? 0} helper="Unresolved workload" icon={Gauge} />
-          <StatCard title="SLA At Risk" value={overview?.sla_at_risk ?? 0} helper="Needs attention" icon={AlertTriangle} />
-          <StatCard title="Resolved" value={overview?.resolved_tickets ?? 0} helper="Completed cases" icon={CheckCircle2} />
-        </div>
+        {/* ── DASHBOARD ── */}
+        {page === 'dashboard' && <>
+          <div className="stats-grid">
+            <StatCard title="Total Tickets" value={overview?.total_tickets ?? 0} helper="All support cases" icon={Ticket} />
+            <StatCard title="Open Backlog" value={overview?.open_tickets ?? 0} helper="Unresolved workload" icon={Gauge} />
+            <StatCard title="SLA At Risk" value={overview?.sla_at_risk ?? 0} helper="Needs attention" icon={AlertTriangle} />
+            <StatCard title="Resolved" value={overview?.resolved_tickets ?? 0} helper="Completed cases" icon={CheckCircle2} />
+          </div>
 
-        <div className="dashboard-grid">
-          <Section title="Ticket Volume Trend" subtitle="Created vs resolved tickets over the last 14 days" icon={LayoutDashboard}>
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={trends}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Area dataKey="created" type="monotone" fillOpacity={0.2} />
-                <Line dataKey="resolved" type="monotone" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </Section>
+          <div className="dashboard-grid">
+            <Section title="Ticket Volume Trend" subtitle="Created vs resolved tickets over the last 14 days" icon={LayoutDashboard}>
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={trends}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Area dataKey="created" type="monotone" fillOpacity={0.2} />
+                  <Line dataKey="resolved" type="monotone" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Section>
 
-          <Section title="Backlog by Priority" subtitle="Operational risk distribution" icon={AlertTriangle}>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={backlog.by_priority}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="value" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Section>
-        </div>
+            <Section title="Backlog by Priority" subtitle="Operational risk distribution" icon={AlertTriangle}>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={backlog.by_priority}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Section>
+          </div>
 
-        <div className="dashboard-grid two-one">
-          <Section title="Ticket Queue" subtitle="Search, select, and analyze operational tickets" icon={Ticket} action={
-            <div className="search-box"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tickets..." /></div>
-          }>
-            <TicketTable tickets={filteredTickets} selectedTicketId={selectedTicket?.id} onSelect={setSelectedTicket} onAnalyze={analyzeTicket} />
-          </Section>
+          <div className="dashboard-grid two-one">
+            <Section title="Ticket Queue" subtitle="Search, select, and analyze operational tickets" icon={Ticket} action={
+              <div className="search-box"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tickets..." /></div>
+            }>
+              <TicketTable tickets={filteredTickets} selectedTicketId={selectedTicket?.id} onSelect={setSelectedTicket} onAnalyze={analyzeTicket} />
+            </Section>
 
-          <Section title="AI Ticket Assistant" subtitle="Summary and next best action" icon={Bot}>
-            {aiResult ? (
-              <div className="ai-card">
-                <h4>{aiResult.summary}</h4>
-                <p><strong>Category:</strong> {aiResult.category}</p>
-                <p><strong>Priority:</strong> {aiResult.recommended_priority}</p>
-                <p><strong>Team:</strong> {aiResult.recommended_team}</p>
-                <p><strong>Next action:</strong> {aiResult.next_action}</p>
-                <p><strong>Tools:</strong> {aiResult.tools_used?.join(' → ')}</p>
-                <p><strong>Knowledge:</strong> {aiResult.knowledge_sources?.join(', ') || 'No match'}</p>
-                <small>Confidence: {Math.round(aiResult.confidence * 100)}% · {aiResult.latency_ms} ms · Trace: {aiResult.trace_id}</small>
+            <Section title="AI Ticket Assistant" subtitle="Summary and next best action" icon={Bot}>
+              {aiResult ? (
+                <div className="ai-card">
+                  <h4>{aiResult.summary}</h4>
+                  <p><strong>Category:</strong> {aiResult.category}</p>
+                  <p><strong>Priority:</strong> {aiResult.recommended_priority}</p>
+                  <p><strong>Team:</strong> {aiResult.recommended_team}</p>
+                  <p><strong>Next action:</strong> {aiResult.next_action}</p>
+                  <p><strong>Tools:</strong> {aiResult.tools_used?.join(' → ')}</p>
+                  <p><strong>Knowledge:</strong> {aiResult.knowledge_sources?.join(', ') || 'No match'}</p>
+                  <small>Confidence: {Math.round(aiResult.confidence * 100)}% · {aiResult.latency_ms} ms · Trace: {aiResult.trace_id}</small>
+                </div>
+              ) : selectedTicket ? (
+                <div className="ai-card empty">
+                  <h4>{selectedTicket.title}</h4>
+                  <p>{selectedTicket.ai_summary || 'Click Analyze on any ticket to generate AI summary and recommended next action.'}</p>
+                  {selectedTicket.ai_next_action && <p><strong>Next action:</strong> {selectedTicket.ai_next_action}</p>}
+                </div>
+              ) : <p>No ticket selected.</p>}
+            </Section>
+          </div>
+
+          <div className="dashboard-grid">
+            <Section title="Agent & Workflow Traces" subtitle="Latest persisted execution telemetry" icon={Timer}>
+              <div className="trace-list">
+                {traces.slice(0, 8).map((trace, index) => (
+                  <div className="trace-row" key={`${trace.trace_id}-${index}`}>
+                    <div><strong>{trace.name}</strong><small>{trace.type} · {trace.trace_id.slice(0, 12)}</small></div>
+                    <Badge type={trace.status === 'success' ? 'enabled' : 'critical'}>{trace.status}</Badge>
+                    <span>{Math.round(trace.latency_ms)} ms</span>
+                  </div>
+                ))}
               </div>
-            ) : selectedTicket ? (
-              <div className="ai-card empty">
-                <h4>{selectedTicket.title}</h4>
-                <p>{selectedTicket.ai_summary || 'Click Analyze on any ticket to generate AI summary and recommended next action.'}</p>
-                {selectedTicket.ai_next_action && <p><strong>Next action:</strong> {selectedTicket.ai_next_action}</p>}
-              </div>
-            ) : <p>No ticket selected.</p>}
-          </Section>
-        </div>
+            </Section>
 
-        <div className="dashboard-grid">
-          <Section title="Agent & Workflow Traces" subtitle="Latest persisted execution telemetry" icon={Timer}>
+            <Section title="Human Approval Queue" subtitle="Sensitive actions stay reviewable and reversible" icon={ListChecks}>
+              <div className="trace-list">
+                {approvals.slice(0, 8).map(approval => (
+                  <div className="trace-row" key={approval.id}>
+                    <div><strong>{approval.action_type}</strong><small>Ticket {approval.ticket_id} · {approval.requested_by}</small></div>
+                    <Badge type={approval.status === 'pending' ? 'high' : 'enabled'}>{approval.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </div>
+
+          <div className="dashboard-grid">
+            <Section title="Workflow Automation Rules" subtitle="n8n-inspired trigger and action automation" icon={GitBranch}>
+              <WorkflowList workflows={workflows} />
+            </Section>
+
+            <Section title="Workforce Productivity" subtitle="Agent workload and operational capacity" icon={Users}>
+              <div className="table-wrap compact">
+                <table>
+                  <thead>
+                    <tr><th>Agent</th><th>Team</th><th>Active</th><th>Score</th></tr>
+                  </thead>
+                  <tbody>
+                    {workforce.map(row => (
+                      <tr key={row.agent}>
+                        <td><strong>{row.agent}</strong><small>{row.skill}</small></td>
+                        <td>{row.team}</td>
+                        <td>{row.active_tickets}</td>
+                        <td>{row.productivity_score}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ResponsiveContainer width="100%" height={190}>
+                <PieChart>
+                  <Pie data={backlog.by_status} dataKey="value" nameKey="name" outerRadius={75} label>
+                    {backlog.by_status.map((_, index) => <Cell key={index} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </Section>
+          </div>
+        </>}
+
+        {/* ── TICKETS ── */}
+        {page === 'tickets' && <>
+          <div className="stats-grid">
+            <StatCard title="Total Tickets" value={overview?.total_tickets ?? 0} helper="All support cases" icon={Ticket} />
+            <StatCard title="Open Backlog" value={overview?.open_tickets ?? 0} helper="Unresolved workload" icon={Gauge} />
+            <StatCard title="SLA At Risk" value={overview?.sla_at_risk ?? 0} helper="Needs attention" icon={AlertTriangle} />
+            <StatCard title="Resolved" value={overview?.resolved_tickets ?? 0} helper="Completed cases" icon={CheckCircle2} />
+          </div>
+          <div className="dashboard-grid two-one">
+            <Section title="Ticket Queue" subtitle="Search, select, and analyze operational tickets" icon={Ticket} action={
+              <div className="search-box"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tickets..." /></div>
+            }>
+              <TicketTable tickets={filteredTickets} selectedTicketId={selectedTicket?.id} onSelect={setSelectedTicket} onAnalyze={analyzeTicket} />
+            </Section>
+            <Section title="AI Ticket Assistant" subtitle="Summary and next best action" icon={Bot}>
+              {aiResult ? (
+                <div className="ai-card">
+                  <h4>{aiResult.summary}</h4>
+                  <p><strong>Category:</strong> {aiResult.category}</p>
+                  <p><strong>Priority:</strong> {aiResult.recommended_priority}</p>
+                  <p><strong>Team:</strong> {aiResult.recommended_team}</p>
+                  <p><strong>Next action:</strong> {aiResult.next_action}</p>
+                  <p><strong>Tools:</strong> {aiResult.tools_used?.join(' → ')}</p>
+                  <p><strong>Knowledge:</strong> {aiResult.knowledge_sources?.join(', ') || 'No match'}</p>
+                  <small>Confidence: {Math.round(aiResult.confidence * 100)}% · {aiResult.latency_ms} ms · Trace: {aiResult.trace_id}</small>
+                </div>
+              ) : selectedTicket ? (
+                <div className="ai-card empty">
+                  <h4>{selectedTicket.title}</h4>
+                  <p>{selectedTicket.ai_summary || 'Click Analyze on any ticket to generate AI summary and recommended next action.'}</p>
+                  {selectedTicket.ai_next_action && <p><strong>Next action:</strong> {selectedTicket.ai_next_action}</p>}
+                </div>
+              ) : <p>No ticket selected.</p>}
+            </Section>
+          </div>
+          <div className="dashboard-grid">
+            <Section title="Human Approval Queue" subtitle="Sensitive actions stay reviewable and reversible" icon={ListChecks}>
+              <div className="trace-list">
+                {approvals.slice(0, 12).map(approval => (
+                  <div className="trace-row" key={approval.id}>
+                    <div><strong>{approval.action_type}</strong><small>Ticket {approval.ticket_id} · {approval.requested_by}</small></div>
+                    <Badge type={approval.status === 'pending' ? 'high' : 'enabled'}>{approval.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            </Section>
+            <Section title="Agent & Workflow Traces" subtitle="Latest persisted execution telemetry" icon={Timer}>
+              <div className="trace-list">
+                {traces.slice(0, 12).map((trace, index) => (
+                  <div className="trace-row" key={`${trace.trace_id}-${index}`}>
+                    <div><strong>{trace.name}</strong><small>{trace.type} · {trace.trace_id.slice(0, 12)}</small></div>
+                    <Badge type={trace.status === 'success' ? 'enabled' : 'critical'}>{trace.status}</Badge>
+                    <span>{Math.round(trace.latency_ms)} ms</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </div>
+        </>}
+
+        {/* ── WORKFLOWS ── */}
+        {page === 'workflows' && <>
+          <Section title="Workflow Automation Rules" subtitle="n8n-inspired trigger and action automation engine" icon={GitBranch}>
+            <WorkflowList workflows={workflows} />
+          </Section>
+          <div className="dashboard-grid">
+            <Section title="Human Approval Queue" subtitle="Sensitive workflow actions pending review" icon={ListChecks}>
+              <div className="trace-list">
+                {approvals.slice(0, 12).map(approval => (
+                  <div className="trace-row" key={approval.id}>
+                    <div><strong>{approval.action_type}</strong><small>Ticket {approval.ticket_id} · {approval.requested_by}</small></div>
+                    <Badge type={approval.status === 'pending' ? 'high' : 'enabled'}>{approval.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            </Section>
+            <Section title="Agent & Workflow Traces" subtitle="Latest persisted execution telemetry" icon={Timer}>
+              <div className="trace-list">
+                {traces.slice(0, 12).map((trace, index) => (
+                  <div className="trace-row" key={`${trace.trace_id}-${index}`}>
+                    <div><strong>{trace.name}</strong><small>{trace.type} · {trace.trace_id.slice(0, 12)}</small></div>
+                    <Badge type={trace.status === 'success' ? 'enabled' : 'critical'}>{trace.status}</Badge>
+                    <span>{Math.round(trace.latency_ms)} ms</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          </div>
+        </>}
+
+        {/* ── AI ASSISTANT ── */}
+        {page === 'ai' && <>
+          <div className="dashboard-grid two-one">
+            <Section title="Ticket Queue" subtitle="Select a ticket then click Analyze" icon={Ticket} action={
+              <div className="search-box"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tickets..." /></div>
+            }>
+              <TicketTable tickets={filteredTickets} selectedTicketId={selectedTicket?.id} onSelect={setSelectedTicket} onAnalyze={analyzeTicket} />
+            </Section>
+            <Section title="AI Ticket Assistant" subtitle="LangGraph agent analysis and recommended action" icon={Bot}>
+              {aiResult ? (
+                <div className="ai-card">
+                  <h4>{aiResult.summary}</h4>
+                  <p><strong>Category:</strong> {aiResult.category}</p>
+                  <p><strong>Priority:</strong> {aiResult.recommended_priority}</p>
+                  <p><strong>Team:</strong> {aiResult.recommended_team}</p>
+                  <p><strong>Next action:</strong> {aiResult.next_action}</p>
+                  <p><strong>Tools:</strong> {aiResult.tools_used?.join(' → ')}</p>
+                  <p><strong>Knowledge:</strong> {aiResult.knowledge_sources?.join(', ') || 'No match'}</p>
+                  <small>Confidence: {Math.round(aiResult.confidence * 100)}% · {aiResult.latency_ms} ms · Trace: {aiResult.trace_id}</small>
+                </div>
+              ) : selectedTicket ? (
+                <div className="ai-card empty">
+                  <h4>{selectedTicket.title}</h4>
+                  <p>{selectedTicket.ai_summary || 'Click Analyze on any ticket row to run the LangGraph agent.'}</p>
+                  {selectedTicket.ai_next_action && <p><strong>Next action:</strong> {selectedTicket.ai_next_action}</p>}
+                </div>
+              ) : <p>No ticket selected.</p>}
+            </Section>
+          </div>
+          <Section title="Agent Traces" subtitle="Persisted LangGraph execution spans" icon={Timer}>
             <div className="trace-list">
-              {traces.slice(0, 8).map((trace, index) => (
+              {traces.filter(t => t.type === 'agent').slice(0, 15).map((trace, index) => (
                 <div className="trace-row" key={`${trace.trace_id}-${index}`}>
                   <div><strong>{trace.name}</strong><small>{trace.type} · {trace.trace_id.slice(0, 12)}</small></div>
                   <Badge type={trace.status === 'success' ? 'enabled' : 'critical'}>{trace.status}</Badge>
@@ -422,52 +603,73 @@ function App() {
               ))}
             </div>
           </Section>
+        </>}
 
-          <Section title="Human Approval Queue" subtitle="Sensitive actions stay reviewable and reversible" icon={ListChecks}>
-            <div className="trace-list">
-              {approvals.slice(0, 8).map(approval => (
-                <div className="trace-row" key={approval.id}>
-                  <div><strong>{approval.action_type}</strong><small>Ticket {approval.ticket_id} · {approval.requested_by}</small></div>
-                  <Badge type={approval.status === 'pending' ? 'high' : 'enabled'}>{approval.status}</Badge>
-                </div>
-              ))}
-            </div>
-          </Section>
-        </div>
+        {/* ── WORKFORCE ── */}
+        {page === 'workforce' && <>
+          <div className="stats-grid">
+            <StatCard title="Total Tickets" value={overview?.total_tickets ?? 0} helper="All support cases" icon={Ticket} />
+            <StatCard title="Open Backlog" value={overview?.open_tickets ?? 0} helper="Unresolved workload" icon={Gauge} />
+            <StatCard title="SLA At Risk" value={overview?.sla_at_risk ?? 0} helper="Needs attention" icon={AlertTriangle} />
+            <StatCard title="Resolved" value={overview?.resolved_tickets ?? 0} helper="Completed cases" icon={CheckCircle2} />
+          </div>
+          <div className="dashboard-grid">
+            <Section title="Workforce Productivity" subtitle="Agent workload and operational capacity" icon={Users}>
+              <div className="table-wrap compact">
+                <table>
+                  <thead>
+                    <tr><th>Agent</th><th>Team</th><th>Active</th><th>Score</th></tr>
+                  </thead>
+                  <tbody>
+                    {workforce.map(row => (
+                      <tr key={row.agent}>
+                        <td><strong>{row.agent}</strong><small>{row.skill}</small></td>
+                        <td>{row.team}</td>
+                        <td>{row.active_tickets}</td>
+                        <td>{row.productivity_score}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Section>
+            <Section title="Backlog by Status" subtitle="Current workload distribution" icon={AlertTriangle}>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie data={backlog.by_status} dataKey="value" nameKey="name" outerRadius={110} label>
+                    {backlog.by_status.map((_, index) => <Cell key={index} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </Section>
+          </div>
+          <div className="dashboard-grid">
+            <Section title="Backlog by Priority" subtitle="Operational risk distribution" icon={AlertTriangle}>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={backlog.by_priority}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Section>
+            <Section title="Backlog by Category" subtitle="Support issue category breakdown" icon={LayoutDashboard}>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={backlog.by_category}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Section>
+          </div>
+        </>}
 
-        <div className="dashboard-grid">
-          <Section title="Workflow Automation Rules" subtitle="n8n-inspired trigger and action automation" icon={GitBranch}>
-            <WorkflowList workflows={workflows} />
-          </Section>
-
-          <Section title="Workforce Productivity" subtitle="Agent workload and operational capacity" icon={Users}>
-            <div className="table-wrap compact">
-              <table>
-                <thead>
-                  <tr><th>Agent</th><th>Team</th><th>Active</th><th>Score</th></tr>
-                </thead>
-                <tbody>
-                  {workforce.map(row => (
-                    <tr key={row.agent}>
-                      <td><strong>{row.agent}</strong><small>{row.skill}</small></td>
-                      <td>{row.team}</td>
-                      <td>{row.active_tickets}</td>
-                      <td>{row.productivity_score}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <ResponsiveContainer width="100%" height={190}>
-              <PieChart>
-                <Pie data={backlog.by_status} dataKey="value" nameKey="name" outerRadius={75} label>
-                  {backlog.by_status.map((_, index) => <Cell key={index} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </Section>
-        </div>
       </main>
     </div>
   );
