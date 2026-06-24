@@ -10,22 +10,22 @@ on:
 
 jobs:
   validate-manifests:
-    name: kubectl dry-run
+    name: kubeconform schema check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: "v1.30.0"
-
-      - name: Create minimal kubeconfig for dry-run
+      - name: Install kubeconform
         run: |
-          mkdir -p $HOME/.kube
-          kubectl config set-cluster mock --server=https://127.0.0.1:6443
-          kubectl config set-context mock --cluster=mock
-          kubectl config use-context mock
+          VERSION="v0.6.7"
+          curl -sL "https://github.com/yannh/kubeconform/releases/download/${VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar xz kubeconform
+          sudo mv kubeconform /usr/local/bin/
 
       - name: Validate all manifests
-        run: kubectl apply --dry-run=client -f k8s/
+        run: |
+          kubeconform \
+            -strict \
+            -summary \
+            -kubernetes-version 1.30.0 \
+            k8s/*.yaml
