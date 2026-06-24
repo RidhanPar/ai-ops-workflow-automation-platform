@@ -48,8 +48,15 @@ async function api(path, options = {}) {
     ...options,
   });
   if (!response.ok) {
+    const err = new Error();
+    err.status = response.status;
     const text = await response.text();
-    throw new Error(text || `API error ${response.status}`);
+    try {
+      err.message = JSON.parse(text).detail || `API error ${response.status}`;
+    } catch {
+      err.message = text || `API error ${response.status}`;
+    }
+    throw err;
   }
   return response.json();
 }
@@ -224,6 +231,7 @@ function App() {
       setApprovals(approvalsData);
       setSelectedTicket(ticketsData[0] || null);
     } catch (error) {
+      if (error.status === 401) { localStorage.clear(); setRole(null); return; }
       setToast(error.message);
     } finally {
       setLoading(false);
@@ -254,6 +262,7 @@ function App() {
       setToast('AI analysis completed.');
       await loadData();
     } catch (error) {
+      if (error.status === 401) { localStorage.clear(); setRole(null); return; }
       setToast(error.message);
     }
   }
@@ -268,6 +277,7 @@ function App() {
       setToast(`${result.executions.length} workflow execution(s) completed.`);
       await loadData();
     } catch (error) {
+      if (error.status === 401) { localStorage.clear(); setRole(null); return; }
       setToast(error.message);
     }
   }
