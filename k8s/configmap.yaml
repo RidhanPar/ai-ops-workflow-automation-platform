@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-ops-config
+  namespace: ai-ops
+data:
+  DATABASE_URL: "postgresql://aiops_user:$(DB_PASSWORD)@postgres-service:5432/aiops_db"
+  LOG_LEVEL: "INFO"
+  CORS_ORIGINS: "https://your-domain.com"
+  DEMO_SEED_ENABLED: "false"
+  POSTGRES_DB: "aiops_db"
+  POSTGRES_USER: "aiops_user"

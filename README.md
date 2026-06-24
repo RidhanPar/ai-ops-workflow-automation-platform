@@ -22,6 +22,7 @@ This production-oriented portfolio project turns support tickets into auditable 
 | Migrations and production deployment | [`backend/migrations/`](backend/migrations/), [`docker-compose.prod.yml`](docker-compose.prod.yml), [`render.yaml`](render.yaml) |
 | n8n workflow integration | [`n8n/`](n8n/) |
 | Prometheus metrics and Grafana dashboard | [`monitoring/`](monitoring/), [`docker-compose.monitoring.yml`](docker-compose.monitoring.yml) |
+| Kubernetes manifests and autoscaling | [`k8s/`](k8s/), [`.github/workflows/k8s-validate.yml`](.github/workflows/k8s-validate.yml) |
 
 ## Implemented Production Signals
 
@@ -263,6 +264,48 @@ CI publishes `backend/evaluations/results.json` as an artifact. The local determ
 - Secrets are environment variables and production Compose requires explicit values.
 
 Read the threat model and operating controls in [`docs/SECURITY_AND_GOVERNANCE.md`](docs/SECURITY_AND_GOVERNANCE.md).
+
+## Kubernetes Deployment
+
+The [`k8s/`](k8s/) directory contains production-grade manifests for deploying to any Kubernetes cluster (tested syntax with --dry-run=client on kubectl v1.30).
+
+Architecture: 2-10 API pods (auto-scaled by HPA) + 1 PostgreSQL StatefulSet with 10Gi persistent volume + ClusterIP Services + nginx Ingress with TLS.
+
+| Component | Kind | Replicas | Auto-scale |
+|---|---|---|---|
+| API | Deployment | 3 | Yes (HPA 2-10, CPU 70%, memory 80%) |
+| PostgreSQL | StatefulSet | 1 | No (stateful) |
+| Ingress | Ingress | -- | nginx + TLS via cert-manager |
+
+### Deploy
+
+```bash
+# 1. Set secrets (replace placeholders with base64-encoded values)
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/secret.yaml      # edit first
+kubectl apply -f k8s/configmap.yaml
+
+# 2. Deploy database first
+kubectl apply -f k8s/postgres-statefulset.yaml
+kubectl apply -f k8s/postgres-service.yaml
+kubectl wait --for=condition=ready pod -l app=postgres -n ai-ops --timeout=120s
+
+# 3. Deploy API
+kubectl apply -f k8s/api-deployment.yaml
+kubectl apply -f k8s/api-service.yaml
+kubectl apply -f k8s/hpa.yaml
+kubectl apply -f k8s/ingress.yaml
+```
+
+### Verify
+
+```bash
+kubectl get pods -n ai-ops
+kubectl get hpa -n ai-ops
+kubectl describe ingress -n ai-ops
+```
+
+Manifest YAML is validated on every push to `k8s/**` via the [`k8s-validate`](.github/workflows/k8s-validate.yml) GitHub Actions workflow using `kubectl apply --dry-run=client`.
 
 ## Development
 

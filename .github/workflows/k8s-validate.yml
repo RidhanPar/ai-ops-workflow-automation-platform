@@ -1,0 +1,31 @@
+name: Kubernetes Manifest Validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "k8s/**"
+      - ".github/workflows/k8s-validate.yml"
+
+jobs:
+  validate-manifests:
+    name: kubectl dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.30.0"
+
+      - name: Create minimal kubeconfig for dry-run
+        run: |
+          mkdir -p $HOME/.kube
+          kubectl config set-cluster mock --server=https://127.0.0.1:6443
+          kubectl config set-context mock --cluster=mock
+          kubectl config use-context mock
+
+      - name: Validate all manifests
+        run: kubectl apply --dry-run=client -f k8s/
