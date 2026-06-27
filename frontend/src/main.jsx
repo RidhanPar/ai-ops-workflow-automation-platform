@@ -335,7 +335,7 @@ function App() {
         <header className="hero">
           <div>
             <Badge type="live">Live Ops Control Center</Badge>
-            <h2>AI Operations & Workflow Automation Platform</h2>
+            <h2>AI Ops — Workflow Automation for HR, Finance and Operations</h2>
             <p>Monitor SLA risk, automate ticket routing, summarize issues with AI, and track support operations performance in one place.</p>
           </div>
           <div className="hero-actions">

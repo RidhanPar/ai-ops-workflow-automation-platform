@@ -1,10 +1,12 @@
 # AI Operations & Workflow Automation Platform
 
-**Traceable AI-agent and workflow automation platform with FastAPI, PostgreSQL, tool orchestration, evaluation, and human approval controls.**
+**AI-powered workflow automation platform that eliminates manual business processes across HR, operations, and finance. Built with n8n-style event-driven pipelines, OpenAI and Anthropic API integration, and real-time monitoring dashboards.**
 
-This production-oriented portfolio project turns support tickets into auditable operational actions. A LangGraph agent retrieves knowledge, checks customer history, produces a Pydantic-validated recommendation, and can request a ticket update through a human approval gate. Configurable workflows route tickets, notify teams, and queue sensitive escalations without silently executing them.
+This production-oriented portfolio project turns operational events into auditable automated actions. A LangGraph agent retrieves knowledge, checks history, produces a Pydantic-validated recommendation, and can request governed updates through a human approval gate. Configurable workflows route events, notify teams, and queue sensitive escalations without silently executing them.
 
 [Live dashboard](https://ridhan-ai-ops-dashboard.onrender.com) · [API documentation](https://ridhan-ai-ops-api.onrender.com/docs) · [API health](https://ridhan-ai-ops-api.onrender.com/health)
+
+`hr-automation` `employee-lifecycle` `people-ops` `n8n` `low-code`
 
 ![Secure agent dashboard](assets/screenshots/secure-agent-dashboard.png)
 
@@ -37,6 +39,18 @@ This production-oriented portfolio project turns support tickets into auditable 
 - Alembic migrations, separate demo seeding, development and production Docker Compose profiles.
 - GitHub Actions for linting, tests/coverage, evaluation, frontend build, migrations, and container configuration.
 - n8n webhook and scheduled workflows with branching logic connected to the backend API.
+
+## HR and People Team Applications
+
+This platform's event-driven workflow engine and LLM integration apply directly to HR and People Operations automation:
+
+- **Employee onboarding** -- trigger task sequences (account provisioning, equipment requests, buddy assignment, day-one calendar blocks) automatically from a hire date event in the HRIS.
+- **Offboarding and IT deprovisioning** -- route exit workflows on a confirmed departure date, closing access tokens, revoking SaaS licences, and notifying IT and payroll without manual handoffs.
+- **Headcount and attrition reporting** -- schedule and distribute weekly headcount snapshots and rolling attrition rates to People Partners using the built-in report scheduler and the `/reports` API.
+- **Budget vs Actual variance alerts** -- compare approved headcount against actuals on a configurable cadence, flag deviations above threshold, and notify the relevant hiring managers through the approval-gate notification pipeline.
+- **LLM-generated job description drafts** -- send a role template through the OpenAI or Anthropic API integration and receive a structured JD draft (title, responsibilities, requirements, levelling criteria) ready for recruiter review.
+
+The same JWT-protected API, human approval gates, audit trail, and Prometheus metrics that govern support ticket workflows apply to any HR event stream with no additional infrastructure.
 
 ## Architecture
 
