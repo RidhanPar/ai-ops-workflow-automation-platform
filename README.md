@@ -25,6 +25,9 @@ This production-oriented portfolio project turns operational events into auditab
 | n8n workflow integration | [`n8n/`](n8n/) |
 | Prometheus metrics and Grafana dashboard | [`monitoring/`](monitoring/), [`docker-compose.monitoring.yml`](docker-compose.monitoring.yml) |
 | Kubernetes manifests and autoscaling | [`k8s/`](k8s/), [`.github/workflows/k8s-validate.yml`](.github/workflows/k8s-validate.yml) |
+| AI ticket assistant prompt templates | [`backend/prompts/ticket_assistant.py`](backend/prompts/ticket_assistant.py) |
+| AI assistant offline evaluation (CI) | [`backend/evaluations/eval_ai_assistant.py`](backend/evaluations/eval_ai_assistant.py) |
+| Structured AI call observability logs | [`backend/observability.py`](backend/observability.py) |
 
 ## Implemented Production Signals
 
