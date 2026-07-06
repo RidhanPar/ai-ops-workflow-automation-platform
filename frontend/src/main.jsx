@@ -65,22 +65,31 @@ function Login({ onLogin }) {
   const [username, setUsername] = useState(import.meta.env.VITE_DEMO_USERNAME || 'operator');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
-    const response = await fetch(`${API_BASE}/auth/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ username, password }),
-    });
-    if (!response.ok) {
-      setError('Login failed. Use one of the documented demo accounts.');
-      return;
+    setError('');
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/auth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ username, password }),
+      });
+      if (!response.ok) {
+        setError('Login failed. Use one of the documented demo accounts.');
+        return;
+      }
+      const result = await response.json();
+      localStorage.setItem('aiops_token', result.access_token);
+      localStorage.setItem('aiops_role', result.role);
+      onLogin(result.role);
+    } catch {
+      setError('Could not reach the server. Please try again in a moment.');
+    } finally {
+      setLoading(false);
     }
-    const result = await response.json();
-    localStorage.setItem('aiops_token', result.access_token);
-    localStorage.setItem('aiops_role', result.role);
-    onLogin(result.role);
   }
 
   return (
@@ -89,10 +98,18 @@ function Login({ onLogin }) {
         <div className="brand-icon"><ShieldCheck size={28} /></div>
         <h1>Secure AI Ops Control Center</h1>
         <p>Sign in to run traceable agent and workflow actions.</p>
-        <label>Username<input value={username} onChange={event => setUsername(event.target.value)} /></label>
-        <label>Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>
+        <label>Username<input value={username} onChange={event => setUsername(event.target.value)} disabled={loading} /></label>
+        <label>Password<input type="password" value={password} onChange={event => setPassword(event.target.value)} disabled={loading} /></label>
         {error && <div className="toast">{error}</div>}
-        <button className="primary login-button"><KeyRound size={16} /> Sign in</button>
+        <button className="primary login-button" disabled={loading}>
+          {loading ? <><RefreshCcw size={16} className="spin" /> Signing in...</> : <><KeyRound size={16} /> Sign in</>}
+        </button>
+        {loading && (
+          <div className="login-loading-note">
+            Connecting to server. The free-tier API may take up to 60 seconds
+            to wake up on first visit — please wait.
+          </div>
+        )}
         <small>Local demo credentials are documented in the README.</small>
       </form>
     </div>
@@ -439,7 +456,7 @@ function App() {
           </div>
 
           <div className="dashboard-grid">
-            <Section title="Workflow Automation Rules" subtitle="n8n-inspired trigger and action automation" icon={GitBranch}>
+            <Section title="Workflow Automation Rules" subtitle="rule-based trigger and action automation" icon={GitBranch}>
               <WorkflowList workflows={workflows} />
             </Section>
 
@@ -535,7 +552,7 @@ function App() {
 
         {/* ── WORKFLOWS ── */}
         {page === 'workflows' && <>
-          <Section title="Workflow Automation Rules" subtitle="n8n-inspired trigger and action automation engine" icon={GitBranch}>
+          <Section title="Workflow Automation Rules" subtitle="rule-based trigger and action automation engine" icon={GitBranch}>
             <WorkflowList workflows={workflows} />
           </Section>
           <div className="dashboard-grid">
