@@ -1,12 +1,12 @@
 # AI Operations & Workflow Automation Platform
 
-**AI-powered workflow automation platform that eliminates manual business processes across HR, operations, and finance. Built with n8n-style event-driven pipelines, OpenAI and Anthropic API integration, and real-time monitoring dashboards.**
+**A workflow automation platform for support and operations teams. A custom rule-based engine written in Python and FastAPI turns ticket events into routing, escalation, and notification actions, with an optional LLM assistant (OpenAI or Anthropic) for ticket analysis and Prometheus-backed monitoring dashboards.**
 
-This production-oriented portfolio project turns operational events into auditable automated actions. A LangGraph agent retrieves knowledge, checks history, produces a Pydantic-validated recommendation, and can request governed updates through a human approval gate. Configurable workflows route events, notify teams, and queue sensitive escalations without silently executing them.
+This portfolio project turns operational events into auditable automated actions. The core is a rule-based workflow engine: configurable triggers match ticket attributes and run ordered actions that route events, notify teams, and queue sensitive escalations for human approval instead of executing them silently. An optional LangGraph agent retrieves knowledge, checks history, and produces a Pydantic-validated recommendation through a provider-agnostic LLM layer that supports both OpenAI and Anthropic, selectable by config. When no API key is set for the selected provider it falls back to deterministic keyword rules, so the demo runs at zero cost.
 
 [Live dashboard](https://ridhan-ai-ops-dashboard.onrender.com) · [API documentation](https://ridhan-ai-ops-api.onrender.com/docs) · [API health](https://ridhan-ai-ops-api.onrender.com/health)
 
-`hr-automation` `employee-lifecycle` `people-ops` `n8n` `low-code`
+`hr-automation` `employee-lifecycle` `people-ops` `workflow-engine` `fastapi`
 
 ![Secure agent dashboard](assets/screenshots/secure-agent-dashboard.png)
 
@@ -15,6 +15,7 @@ This production-oriented portfolio project turns operational events into auditab
 | Capability | Evidence |
 |---|---|
 | LangGraph agent and explicit tools | [`backend/app/services/agent.py`](backend/app/services/agent.py) |
+| Provider-agnostic LLM layer (OpenAI and Anthropic) | [`backend/app/services/llm_provider.py`](backend/app/services/llm_provider.py) |
 | RAG/vector search | [`backend/app/services/knowledge.py`](backend/app/services/knowledge.py), pgvector migration |
 | Authentication and RBAC | [`backend/app/core/security.py`](backend/app/core/security.py) |
 | Audit, approvals, idempotency | [`backend/app/services/audit.py`](backend/app/services/audit.py), [`backend/app/services/workflows.py`](backend/app/services/workflows.py) |
@@ -22,7 +23,6 @@ This production-oriented portfolio project turns operational events into auditab
 | LLM evaluation | [`backend/evaluations/`](backend/evaluations/) |
 | CI and tests | [`backend/tests/`](backend/tests/), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
 | Migrations and production deployment | [`backend/migrations/`](backend/migrations/), [`docker-compose.prod.yml`](docker-compose.prod.yml), [`render.yaml`](render.yaml) |
-| n8n workflow integration | [`n8n/`](n8n/) |
 | Prometheus metrics and Grafana dashboard | [`monitoring/`](monitoring/), [`docker-compose.monitoring.yml`](docker-compose.monitoring.yml) |
 | Kubernetes manifests and autoscaling | [`k8s/`](k8s/), [`.github/workflows/k8s-validate.yml`](.github/workflows/k8s-validate.yml) |
 | AI ticket assistant prompt templates | [`backend/prompts/ticket_assistant.py`](backend/prompts/ticket_assistant.py) |
@@ -41,19 +41,6 @@ This production-oriented portfolio project turns operational events into auditab
 - Golden-dataset evaluation for routing, priority, schema, prompt injection, fallback, latency, and cost.
 - Alembic migrations, separate demo seeding, development and production Docker Compose profiles.
 - GitHub Actions for linting, tests/coverage, evaluation, frontend build, migrations, and container configuration.
-- n8n webhook and scheduled workflows with branching logic connected to the backend API.
-
-## HR and People Team Applications
-
-This platform's event-driven workflow engine and LLM integration apply directly to HR and People Operations automation:
-
-- **Employee onboarding** -- trigger task sequences (account provisioning, equipment requests, buddy assignment, day-one calendar blocks) automatically from a hire date event in the HRIS.
-- **Offboarding and IT deprovisioning** -- route exit workflows on a confirmed departure date, closing access tokens, revoking SaaS licences, and notifying IT and payroll without manual handoffs.
-- **Headcount and attrition reporting** -- schedule and distribute weekly headcount snapshots and rolling attrition rates to People Partners using the built-in report scheduler and the `/reports` API.
-- **Budget vs Actual variance alerts** -- compare approved headcount against actuals on a configurable cadence, flag deviations above threshold, and notify the relevant hiring managers through the approval-gate notification pipeline.
-- **LLM-generated job description drafts** -- send a role template through the OpenAI or Anthropic API integration and receive a structured JD draft (title, responsibilities, requirements, levelling criteria) ready for recruiter review.
-
-The same JWT-protected API, human approval gates, audit trail, and Prometheus metrics that govern support ticket workflows apply to any HR event stream with no additional infrastructure.
 
 ## Architecture
 
@@ -73,8 +60,6 @@ flowchart LR
     ENGINE --> DB
     DB --> TRACE[Audit events and execution traces]
     TRACE --> UI
-    ENGINE -->|webhook POST| N8N[n8n workflows]
-    N8N -->|GET /reports/powerbi/tickets| API
 ```
 
 ## Five-Minute Quick Start
@@ -105,66 +90,42 @@ Demo users:
 
 Do not use demo credentials or the example JWT secret outside local development.
 
-## n8n Workflow Automation
+## Workflow Automation Engine
 
-The `n8n/` directory contains two real n8n workflows that connect to the backend, exported as importable JSON, plus a Docker Compose file to run n8n locally.
+The automation engine lives in [`backend/app/services/workflows.py`](backend/app/services/workflows.py). It is a custom rule-based engine written in Python, inspired by event-driven trigger and action workflow concepts but not built on any external workflow tool.
 
-### What is included
+Each workflow rule has a `trigger` (a set of ticket attributes to match, including derived `sla_status`) and an ordered list of `actions`. When a ticket matches a rule's trigger, the engine runs its actions in order:
 
-| File | Description |
+| Action | Effect |
 |---|---|
-| `n8n/workflows/workflow_a_ticket_event_handler.json` | Webhook-triggered workflow that routes ticket events by priority |
-| `n8n/workflows/workflow_b_scheduled_report_digest.json` | Daily scheduled workflow that fetches and summarizes the ticket report |
-| `n8n/docker-compose.n8n.yml` | Runs the official n8n Docker image joined to the backend network |
-| `n8n/SETUP.md` | Full setup guide with import steps and test commands |
+| `assign_team` | Assigns the ticket to the least-loaded agent on a team |
+| `set_priority` | Sets the ticket priority |
+| `escalate` | Queues a sensitive escalation as an approval request rather than escalating directly |
+| `approval_required` | Flags the ticket for human approval |
+| `notify` | Records a notification for a target audience |
+| `mark_in_progress` | Moves the ticket to `in_progress` |
 
-### Workflow A - Ticket Event Handler
+Every run is idempotent: an `idempotency_key` scoped per ticket and rule prevents duplicate execution on retries. Each execution records the rule name, actions taken, trace ID, and a before/after audit entry.
 
-Triggered by a POST to the n8n webhook endpoint at `/webhook/ticket-event`. Expects a JSON body with `ticket_id`, `priority`, `category`, and `customer`.
+## LLM Provider Layer
 
-An IF node branches on the `priority` field:
+Ticket analysis runs through a provider-agnostic layer in [`backend/app/services/llm_provider.py`](backend/app/services/llm_provider.py). Both providers implement one `LLMProvider` interface with a single `complete()` method that takes the prompt payload and returns the model's text response and token usage:
 
-- **high or critical**: posts an `alert_level: URGENT` payload to a mock notification endpoint (webhook.site)
-- **low or medium**: posts a `log_level: INFO` payload to the same mock endpoint for queue logging
+- `OpenAIProvider` calls the OpenAI Responses API with a JSON output format.
+- `AnthropicProvider` calls the Anthropic Messages API (`client.messages.create`) with the same system instructions.
 
-```
-[Webhook POST /ticket-event]
-        |
-[Priority Router - IF node]
-     /        \
-(high/crit)  (low/med)
-     |              |
-[Notify endpoint] [Log endpoint]
-```
+The active provider is chosen by the `LLM_PROVIDER` setting (`openai` or `anthropic`, default `openai`). The LangGraph agent in [`backend/app/services/agent.py`](backend/app/services/agent.py) calls through this layer rather than any single SDK, parses the response into a Pydantic `TicketAnalysis`, and records latency, token, and cost spans.
 
-This workflow is the n8n equivalent of the backend rule-based `notify` action in `services/workflows.py`. You can POST to the n8n webhook URL directly from curl or from a custom notify action in the backend.
+When no API key is set for the selected provider, the agent skips the LLM call and uses the deterministic keyword-rule fallback, so the platform runs end to end with no external calls and no cost.
 
-### Workflow B - Scheduled Report Digest
-
-Runs daily at 08:00 UTC via cron trigger `0 8 * * *`.
-
-1. Calls `GET http://aiops_backend:8000/reports/powerbi/tickets` (the same endpoint used by Power BI)
-2. Aggregates the response in a JavaScript Code node: total tickets, open count, escalated count, SLA breach count, breakdown by priority / status / category, and an alert message
-3. Posts the full digest JSON to the mock endpoint with header `X-Report-Source: aiops-n8n-digest`
-
-```
-[Schedule - daily 08:00 UTC]
-        |
-[GET /reports/powerbi/tickets]
-        |
-[Build Digest Summary - Code node]
-        |
-[POST digest to mock endpoint]
-```
-
-### Quick start for n8n
-
-1. Start the main platform stack: `docker compose up -d`
-2. Replace `YOUR_UNIQUE_ID_HERE` in both workflow JSON files with a URL from https://webhook.site
-3. Start n8n: `docker compose -f n8n/docker-compose.n8n.yml up -d`
-4. Open http://localhost:5678, create an owner account, import both workflow files, and activate them
-
-See `n8n/SETUP.md` for detailed instructions and test commands.
+| Setting | Purpose | Default |
+|---|---|---|
+| `LLM_PROVIDER` | Selects `openai` or `anthropic` | `openai` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Provider credentials (absent means fallback) | empty |
+| `OPENAI_MODEL` / `ANTHROPIC_MODEL` | Model id per provider | `gpt-4o` / `claude-sonnet-4-5` |
+| `*_TIMEOUT_SECONDS`, `*_MAX_RETRIES` | Per-provider timeout and retry budget | `20`, `2` |
+| `ANTHROPIC_MAX_TOKENS` | Response token cap (required by the Messages API) | `1024` |
+| `*_INPUT_COST_PER_1M`, `*_OUTPUT_COST_PER_1M` | Per-provider pricing used for cost spans | provider-specific |
 
 ## Observability
 
@@ -284,7 +245,7 @@ Read the threat model and operating controls in [`docs/SECURITY_AND_GOVERNANCE.m
 
 ## Kubernetes Deployment
 
-The [`k8s/`](k8s/) directory contains production-grade manifests for deploying to any Kubernetes cluster (tested syntax with --dry-run=client on kubectl v1.30).
+The [`k8s/`](k8s/) directory contains production-grade manifests for deploying to any Kubernetes cluster (schema-validated with kubeconform against Kubernetes 1.30).
 
 Architecture: 2-10 API pods (auto-scaled by HPA) + 1 PostgreSQL StatefulSet with 10Gi persistent volume + ClusterIP Services + nginx Ingress with TLS.
 
@@ -322,7 +283,7 @@ kubectl get hpa -n ai-ops
 kubectl describe ingress -n ai-ops
 ```
 
-Manifest YAML is validated on every push to `k8s/**` via the [`k8s-validate`](.github/workflows/k8s-validate.yml) GitHub Actions workflow using `kubectl apply --dry-run=client`.
+Manifest YAML is validated on every push to `k8s/**` via the [`k8s-validate`](.github/workflows/k8s-validate.yml) GitHub Actions workflow using kubeconform against the Kubernetes 1.30 schemas.
 
 ## Development
 
@@ -364,4 +325,4 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 
 ## Resume Bullet
 
-Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an optional OpenAI assistant; added LangGraph tool orchestration, automated evaluations, trace evidence, CI tests, and approval controls.
+Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an optional LLM assistant behind a provider-agnostic layer supporting OpenAI and Anthropic; added LangGraph orchestration, a deterministic fallback, automated evaluations, trace evidence, CI tests, and approval controls.
