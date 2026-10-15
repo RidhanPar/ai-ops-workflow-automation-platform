@@ -32,6 +32,7 @@ This portfolio project turns operational events into auditable automated actions
 | Prompt injection detector | [`backend/app/services/prompt_safety.py`](backend/app/services/prompt_safety.py) |
 | Embedding dimension study | [`backend/evaluations/embedding_dimension_study.py`](backend/evaluations/embedding_dimension_study.py) |
 | Risk review design, separation of duties | [`docs/RISK_REVIEW.md`](docs/RISK_REVIEW.md) |
+| Issues found during the build and how they were fixed | [`docs/ISSUES_AND_FIXES.md`](docs/ISSUES_AND_FIXES.md) |
 
 ## Implemented Production Signals
 
