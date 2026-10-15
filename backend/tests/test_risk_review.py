@@ -838,3 +838,70 @@ def test_audit_events_written_for_decision(client, operator_headers, viewer_head
         assert "risk.decision_made" in actions
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /risks/{risk_id}/latest-package
+# ---------------------------------------------------------------------------
+
+
+def test_latest_package_returns_newest(client, operator_headers):
+    r_create = client.post(
+        "/risks",
+        json={
+            "title": "Risk for latest-package endpoint test",
+            "description": "Two packages are generated; latest-package must return the second one by id order.",
+            "business_unit": "Engineering",
+            "owner": "platform-lead",
+            "impact": 3,
+            "likelihood": 3,
+            "proposed_mitigation": "Rotate credentials and enforce short-lived tokens with automated expiry.",
+        },
+        headers=operator_headers,
+    )
+    assert r_create.status_code == 201
+    risk_id = r_create.json()["id"]
+
+    pkg1 = client.post(
+        f"/risks/{risk_id}/decision-package",
+        json={"idempotency_key": f"latest-pkg-test-1-{risk_id}"},
+        headers=operator_headers,
+    )
+    assert pkg1.status_code == 200
+    pkg1_id = pkg1.json()["id"]
+
+    pkg2 = client.post(
+        f"/risks/{risk_id}/decision-package",
+        json={"idempotency_key": f"latest-pkg-test-2-{risk_id}"},
+        headers=operator_headers,
+    )
+    assert pkg2.status_code == 200
+    pkg2_id = pkg2.json()["id"]
+
+    assert pkg2_id > pkg1_id
+
+    response = client.get(f"/risks/{risk_id}/latest-package", headers=operator_headers)
+    assert response.status_code == 200
+    assert response.json()["id"] == pkg2_id
+    assert response.json()["risk_item_id"] == risk_id
+
+
+def test_latest_package_404_when_none(client, operator_headers):
+    r_create = client.post(
+        "/risks",
+        json={
+            "title": "Risk with no package for 404 test",
+            "description": "A risk item created with no package generated, used to verify the latest-package endpoint returns 404.",
+            "business_unit": "IT",
+            "owner": "it-lead",
+            "impact": 2,
+            "likelihood": 2,
+            "proposed_mitigation": "Apply network segmentation and schedule a quarterly review.",
+        },
+        headers=operator_headers,
+    )
+    assert r_create.status_code == 201
+    risk_id = r_create.json()["id"]
+
+    response = client.get(f"/risks/{risk_id}/latest-package", headers=operator_headers)
+    assert response.status_code == 404

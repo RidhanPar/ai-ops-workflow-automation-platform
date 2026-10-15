@@ -1,0 +1,263 @@
+{
+  "provider": "fallback",
+  "total_cases": 25,
+  "completeness_precision": 1.0,
+  "completeness_recall": 1.0,
+  "schema_validity": 1.0,
+  "injection_flagged_rate": 1.0,
+  "no_auto_decision": true,
+  "past_decision_hit_rate_top3": 0.0,
+  "elapsed_seconds": 0.0,
+  "cases": [
+    {
+      "id": "rg-001",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 15,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-002",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 16,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-003",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 10,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-004",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 16,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-005",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 5,
+      "recommended_treatment": "accept",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-006",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 8,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-007",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 6,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-008",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 6,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-009",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 9,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": true
+    },
+    {
+      "id": "rg-010",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 4,
+      "recommended_treatment": "accept",
+      "schema_errors": [],
+      "injection_detected": true
+    },
+    {
+      "id": "rg-011",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 8,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": true
+    },
+    {
+      "id": "rg-012",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 9,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-013",
+      "needs_info": true,
+      "expected_needs_info": true,
+      "source": "fallback_no_provider",
+      "risk_score": 12,
+      "recommended_treatment": null,
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-014",
+      "needs_info": true,
+      "expected_needs_info": true,
+      "source": "fallback_no_provider",
+      "risk_score": 20,
+      "recommended_treatment": null,
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-015",
+      "needs_info": true,
+      "expected_needs_info": true,
+      "source": "fallback_no_provider",
+      "risk_score": 9,
+      "recommended_treatment": null,
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-016",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 12,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-017",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 9,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-018",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 12,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-019",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 12,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-020",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 20,
+      "recommended_treatment": "avoid",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-021",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 1,
+      "recommended_treatment": "accept",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-022",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 10,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-023",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 12,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-024",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 8,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    },
+    {
+      "id": "rg-025",
+      "needs_info": false,
+      "expected_needs_info": false,
+      "source": "fallback_no_provider",
+      "risk_score": 8,
+      "recommended_treatment": "mitigate",
+      "schema_errors": [],
+      "injection_detected": null
+    }
+  ]
+}
