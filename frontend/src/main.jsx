@@ -11,6 +11,7 @@ import {
   ListChecks,
   RefreshCcw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Ticket,
   Timer,
@@ -52,7 +53,16 @@ async function api(path, options = {}) {
     err.status = response.status;
     const text = await response.text();
     try {
-      err.message = JSON.parse(text).detail || `API error ${response.status}`;
+      const parsed = JSON.parse(text);
+      const d = parsed.detail;
+      if (typeof d === 'string') {
+        err.message = d;
+      } else if (d && typeof d === 'object') {
+        err.message = d.message || JSON.stringify(d);
+        err.detail = d;
+      } else {
+        err.message = `API error ${response.status}`;
+      }
     } catch {
       err.message = text || `API error ${response.status}`;
     }
@@ -209,6 +219,469 @@ function WorkflowList({ workflows }) {
   );
 }
 
+// ── Risk Review helpers ───────────────────────────────────────────────────────
+
+function getUsername() {
+  try {
+    const token = localStorage.getItem('aiops_token');
+    if (!token) return null;
+    return JSON.parse(atob(token.split('.')[1])).sub;
+  } catch { return null; }
+}
+
+const SOURCE_LABELS = {
+  openai_structured_output: 'OpenAI structured output',
+  anthropic_messages: 'Anthropic tool use',
+  fallback_no_provider: 'Fallback — no LLM configured',
+  fallback_invalid_output: 'Fallback — invalid LLM output',
+  fallback_provider_failure: 'Fallback — LLM provider error',
+  fallback_unexpected_failure: 'Fallback — unexpected error',
+  seed: 'Pre-seeded',
+};
+
+function scoreType(score) {
+  if (score >= 20) return 'critical';
+  if (score >= 12) return 'high';
+  if (score >= 6) return 'medium';
+  return 'low';
+}
+
+function sourceVariant(source) {
+  if (source === 'openai_structured_output' || source === 'anthropic_messages') return 'enabled';
+  if (source === 'seed') return '';
+  return 'high';
+}
+
+function RiskReviewPage({ role }) {
+  const [risks, setRisks] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [latestPkg, setLatestPkg] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [showCreate, setShowCreate] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [pkgLoading, setPkgLoading] = useState(false);
+  const [genLoading, setGenLoading] = useState(false);
+  const [toast, setToast] = useState('');
+  const [createForm, setCreateForm] = useState({
+    title: '', description: '', business_unit: '', owner: '',
+    impact: 3, likelihood: 3, proposed_mitigation: '',
+  });
+  const [assessForm, setAssessForm] = useState({ perspective: 'security', vote: 'mitigate', comment: '' });
+  const [assessLoading, setAssessLoading] = useState(false);
+  const [decisionForm, setDecisionForm] = useState({ decision: 'mitigate', rationale: '' });
+  const [decisionLoading, setDecisionLoading] = useState(false);
+
+  const currentUser = getUsername();
+  const canWrite = ['operator', 'manager', 'admin'].includes(role);
+  const canDecide = ['manager', 'admin'].includes(role);
+  const selectedRisk = risks.find(r => r.id === selectedId) || null;
+
+  async function loadRisks() {
+    setLoading(true);
+    try {
+      const data = await api('/risks');
+      setRisks(data);
+    } catch (e) { setToast(e.message); }
+    finally { setLoading(false); }
+  }
+
+  async function loadPackage(riskId) {
+    if (!riskId) return;
+    setPkgLoading(true);
+    setLatestPkg(null);
+    try {
+      const pkg = await api(`/risks/${riskId}/latest-package`);
+      setLatestPkg(pkg);
+    } catch (e) {
+      if (e.status !== 404) setToast(e.message);
+    } finally { setPkgLoading(false); }
+  }
+
+  useEffect(() => { loadRisks(); }, []);
+  useEffect(() => { loadPackage(selectedId); }, [selectedId]);
+
+  const filtered = useMemo(
+    () => statusFilter === 'all' ? risks : risks.filter(r => r.status === statusFilter),
+    [risks, statusFilter]
+  );
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    try {
+      const risk = await api('/risks', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...createForm,
+          impact: Number(createForm.impact),
+          likelihood: Number(createForm.likelihood),
+          proposed_mitigation: createForm.proposed_mitigation || null,
+        }),
+      });
+      setShowCreate(false);
+      setCreateForm({ title: '', description: '', business_unit: '', owner: '', impact: 3, likelihood: 3, proposed_mitigation: '' });
+      await loadRisks();
+      setSelectedId(risk.id);
+    } catch (e) { setToast(e.message); }
+  }
+
+  async function handleGeneratePackage() {
+    if (!selectedId) return;
+    setGenLoading(true);
+    try {
+      const pkg = await api(`/risks/${selectedId}/decision-package`, {
+        method: 'POST',
+        body: JSON.stringify({ idempotency_key: crypto.randomUUID() }),
+      });
+      setLatestPkg(pkg);
+      await loadRisks();
+      setToast('Package generated.');
+    } catch (e) {
+      if (e.detail?.gaps) {
+        setToast(`Incomplete: ${e.detail.gaps.join('; ')}`);
+      } else {
+        setToast(e.message);
+      }
+      await loadPackage(selectedId);
+    } finally { setGenLoading(false); }
+  }
+
+  async function handleAssess(e) {
+    e.preventDefault();
+    if (!latestPkg) return;
+    setAssessLoading(true);
+    try {
+      await api(`/decision-packages/${latestPkg.id}/assessments`, {
+        method: 'POST',
+        body: JSON.stringify(assessForm),
+      });
+      setAssessForm({ perspective: 'security', vote: 'mitigate', comment: '' });
+      await loadPackage(selectedId);
+      setToast('Assessment submitted.');
+    } catch (e) { setToast(e.message); }
+    finally { setAssessLoading(false); }
+  }
+
+  async function handleDecide(e) {
+    e.preventDefault();
+    if (!selectedRisk || !latestPkg) return;
+    setDecisionLoading(true);
+    try {
+      await api(`/risks/${selectedRisk.id}/decision`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...decisionForm,
+          decision_package_id: latestPkg.id,
+          version: selectedRisk.version,
+        }),
+      });
+      setDecisionForm({ decision: 'mitigate', rationale: '' });
+      await loadRisks();
+      await loadPackage(selectedId);
+      setToast('Decision recorded.');
+    } catch (e) {
+      setToast(e.detail?.message || e.message);
+    } finally { setDecisionLoading(false); }
+  }
+
+  const qualifyingAssessments = useMemo(
+    () => (latestPkg?.assessments || []).filter(a => a.reviewer !== currentUser),
+    [latestPkg, currentUser]
+  );
+  const alreadyAssessed = useMemo(
+    () => (latestPkg?.assessments || []).some(a => a.reviewer === currentUser),
+    [latestPkg, currentUser]
+  );
+
+  const assessBlockReason = !latestPkg ? 'No package yet'
+    : latestPkg.needs_info ? 'Package is incomplete — fix and regenerate'
+    : selectedRisk?.status === 'decided' ? 'Risk is already decided'
+    : alreadyAssessed ? 'You have already submitted an assessment for this package'
+    : null;
+
+  const decideBlockReason = !latestPkg || latestPkg.needs_info ? 'No valid package'
+    : selectedRisk?.status === 'decided' ? 'Risk is already decided'
+    : qualifyingAssessments.length < 2 ? `Need ${2 - qualifyingAssessments.length} more qualifying assessment(s) (yours excluded)`
+    : null;
+
+  return (
+    <div>
+      {toast && <div className="toast" onClick={() => setToast('')}>{toast}</div>}
+      <div className="dashboard-grid two-one" style={{ alignItems: 'start' }}>
+        {/* ── Left: Risk list ── */}
+        <Section title="Risk Register" subtitle={`${risks.length} risks · ${risks.filter(r => r.status === 'in_review').length} in review`} icon={ShieldAlert}
+          action={canWrite && <button className="primary" style={{ fontSize: 13, padding: '6px 14px' }} onClick={() => setShowCreate(s => !s)}>+ New Risk</button>}
+        >
+          <div className="risk-list-header">
+            <div className="filter-tabs">
+              {['all', 'draft', 'in_review', 'decided'].map(s => (
+                <button key={s} className={`filter-tab${statusFilter === s ? ' active' : ''}`} onClick={() => setStatusFilter(s)}>
+                  {s === 'all' ? 'All' : s.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+          {showCreate && (
+            <div className="form-block" style={{ marginBottom: 16 }}>
+              <h5>New Risk Item</h5>
+              <form className="risk-form" onSubmit={handleCreate}>
+                <div className="row-2">
+                  <label>Title<input required minLength={5} value={createForm.title} onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))} /></label>
+                  <label>Business Unit<input required value={createForm.business_unit} onChange={e => setCreateForm(f => ({ ...f, business_unit: e.target.value }))} /></label>
+                </div>
+                <label>Description<textarea required minLength={10} value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} /></label>
+                <div className="row-2">
+                  <label>Owner<input required value={createForm.owner} onChange={e => setCreateForm(f => ({ ...f, owner: e.target.value }))} /></label>
+                  <label>Proposed Mitigation<input value={createForm.proposed_mitigation} onChange={e => setCreateForm(f => ({ ...f, proposed_mitigation: e.target.value }))} placeholder="Optional — required for package generation" /></label>
+                </div>
+                <div className="row-2">
+                  <label>Impact (1–5)<input type="number" min={1} max={5} value={createForm.impact} onChange={e => setCreateForm(f => ({ ...f, impact: e.target.value }))} /></label>
+                  <label>Likelihood (1–5)<input type="number" min={1} max={5} value={createForm.likelihood} onChange={e => setCreateForm(f => ({ ...f, likelihood: e.target.value }))} /></label>
+                </div>
+                <div className="form-actions">
+                  <button type="button" onClick={() => setShowCreate(false)}>Cancel</button>
+                  <button type="submit" className="primary">Create Risk</button>
+                </div>
+              </form>
+            </div>
+          )}
+          {loading ? <p style={{ color: '#64748b', padding: '16px 0' }}>Loading risks…</p> : (
+            <div className="table-wrap compact">
+              <table>
+                <thead><tr><th>Title</th><th>Owner</th><th>Status</th><th>Score</th></tr></thead>
+                <tbody>
+                  {filtered.map(risk => {
+                    const score = risk.impact * risk.likelihood;
+                    return (
+                      <tr key={risk.id} className={selectedId === risk.id ? 'selected-row' : ''} onClick={() => setSelectedId(risk.id)} style={{ cursor: 'pointer' }}>
+                        <td>
+                          <strong>{risk.title}</strong>
+                          <small>{risk.business_unit}</small>
+                        </td>
+                        <td>{risk.owner}</td>
+                        <td><Badge type={risk.status}>{risk.status.replace('_', ' ')}</Badge></td>
+                        <td><Badge type={scoreType(score)}>{score}/25</Badge></td>
+                      </tr>
+                    );
+                  })}
+                  {filtered.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#64748b', padding: 16 }}>No risks match this filter.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+
+        {/* ── Right: Risk detail ── */}
+        <div style={{ display: 'grid', gap: 16 }}>
+          {!selectedRisk ? (
+            <div className="panel"><p className="no-package">Select a risk from the list to view details.</p></div>
+          ) : (
+            <>
+              {/* Meta header */}
+              <div className="panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>{selectedRisk.title}</h3>
+                    <p style={{ margin: '0 0 10px', fontSize: 13, color: '#64748b' }}>{selectedRisk.description}</p>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Badge type={selectedRisk.status}>{selectedRisk.status.replace('_', ' ')}</Badge>
+                      <Badge type={scoreType(selectedRisk.impact * selectedRisk.likelihood)}>Score {selectedRisk.impact * selectedRisk.likelihood}/25</Badge>
+                      <span style={{ fontSize: 12, color: '#64748b' }}>BU: {selectedRisk.business_unit} · Owner: {selectedRisk.owner}</span>
+                    </div>
+                  </div>
+                  {canWrite && selectedRisk.status !== 'decided' && (
+                    <button className="primary" style={{ fontSize: 13, padding: '7px 14px', whiteSpace: 'nowrap' }} onClick={handleGeneratePackage} disabled={genLoading}>
+                      {genLoading ? 'Generating…' : 'Generate Package'}
+                    </button>
+                  )}
+                </div>
+                {selectedRisk.proposed_mitigation && (
+                  <p style={{ margin: '10px 0 0', fontSize: 13 }}><strong>Proposed mitigation:</strong> {selectedRisk.proposed_mitigation}</p>
+                )}
+              </div>
+
+              {/* Package detail */}
+              <div className="panel">
+                {pkgLoading ? (
+                  <p style={{ color: '#64748b', textAlign: 'center', padding: '20px 0' }}>Loading package…</p>
+                ) : !latestPkg ? (
+                  <p className="no-package">No decision package yet. Click "Generate Package" to start the review.</p>
+                ) : latestPkg.needs_info ? (
+                  <div>
+                    <div className="needs-info-banner">
+                      <h5>Incomplete risk item</h5>
+                      <p style={{ margin: '4px 0 8px', fontSize: 13 }}>
+                        This package could not be fully generated because required fields are missing.
+                        Fix the gaps below and click "Generate Package" again with a new key.
+                      </p>
+                      <ul className="gaps-list">
+                        {latestPkg.completeness_gaps.map((g, i) => <li key={i}>{g}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="score-row">
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>Risk Package</span>
+                      <Badge type={scoreType(latestPkg.risk_score)}>Score {latestPkg.risk_score}/25</Badge>
+                      <Badge type={latestPkg.recommended_treatment}>{latestPkg.recommended_treatment}</Badge>
+                    </div>
+                    <div className="source-bar">
+                      <Badge type={sourceVariant(latestPkg.source)}>{SOURCE_LABELS[latestPkg.source] || latestPkg.source}</Badge>
+                      <span style={{ color: '#64748b', fontSize: 12 }}>Trace: {latestPkg.trace_id?.slice(0, 12)}</span>
+                    </div>
+                    {latestPkg.safety_flags?.length > 0 && (
+                      <div className="pkg-section">
+                        <h5>Safety Flags</h5>
+                        <div className="safety-flags">
+                          {latestPkg.safety_flags.map((f, i) => <span key={i} className="safety-flag">{f}</span>)}
+                        </div>
+                      </div>
+                    )}
+                    <div className="pkg-section">
+                      <h5>Perspectives</h5>
+                      <div className="perspectives-grid">
+                        {(latestPkg.perspectives || []).map((p, i) => (
+                          <div key={i} className="perspective-card">
+                            <h5>
+                              <Badge type={p.area}>{p.area}</Badge>
+                            </h5>
+                            <p style={{ fontWeight: 700, fontSize: 12, margin: '4px 0 2px', color: '#334155' }}>Key concerns</p>
+                            <ul>{p.key_concerns?.map((c, j) => <li key={j}>{c}</li>)}</ul>
+                            <p style={{ fontWeight: 700, fontSize: 12, margin: '8px 0 2px', color: '#334155' }}>Reviewer questions</p>
+                            <ul>{p.reviewer_questions?.map((q, j) => <li key={j}>{q}</li>)}</ul>
+                            <div className="p-footer">
+                              <Badge type={p.suggested_treatment}>{p.suggested_treatment}</Badge>
+                              <span>Confidence: {Math.round((p.confidence || 0) * 100)}%</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {latestPkg.best_practices?.length > 0 && (
+                      <div className="pkg-section">
+                        <h5>Cited Best Practice Documents</h5>
+                        <div className="cited-list">
+                          {latestPkg.best_practices.map((doc, i) => (
+                            <div key={i} className="cited-item">
+                              <strong>{doc.title}</strong>
+                              <span>{(doc.content || '').slice(0, 200)}{doc.content?.length > 200 ? '…' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {latestPkg.past_decisions?.length > 0 && (
+                      <div className="pkg-section">
+                        <h5>Cited Past Decisions</h5>
+                        <div className="cited-list">
+                          {latestPkg.past_decisions.map((pd, i) => (
+                            <div key={i} className="cited-item">
+                              <strong>{pd.risk_title}</strong>
+                              <span><Badge type={pd.decision}>{pd.decision}</Badge></span>
+                              <span style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'block' }}>{(pd.rationale || '').slice(0, 200)}{pd.rationale?.length > 200 ? '…' : ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Assessments */}
+                    <div className="pkg-section">
+                      <h5>Assessments ({latestPkg.assessments?.length || 0})</h5>
+                      {latestPkg.assessments?.length > 0 ? (
+                        <div className="assess-list">
+                          {latestPkg.assessments.map(a => (
+                            <div key={a.id} className="assess-row">
+                              <div className="assess-meta">
+                                <strong>{a.reviewer}{a.reviewer === currentUser ? ' (you)' : ''}</strong>
+                                <span>{a.comment}</span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                                <Badge type={a.perspective}>{a.perspective}</Badge>
+                                <Badge type={a.vote}>{a.vote}</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : <p style={{ color: '#64748b', fontSize: 13 }}>No assessments yet.</p>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Assessment form */}
+                <div className="form-block">
+                  <h5>Submit Assessment</h5>
+                  {assessBlockReason ? (
+                    <p className="disabled-reason">{assessBlockReason}</p>
+                  ) : (
+                    <form className="risk-form" onSubmit={handleAssess}>
+                      <div className="row-2">
+                        <label>Perspective
+                          <select value={assessForm.perspective} onChange={e => setAssessForm(f => ({ ...f, perspective: e.target.value }))}>
+                            <option value="security">Security</option>
+                            <option value="compliance">Compliance</option>
+                            <option value="business">Business</option>
+                          </select>
+                        </label>
+                        <label>Vote
+                          <select value={assessForm.vote} onChange={e => setAssessForm(f => ({ ...f, vote: e.target.value }))}>
+                            <option value="accept">Accept</option>
+                            <option value="mitigate">Mitigate</option>
+                            <option value="transfer">Transfer</option>
+                            <option value="reject">Reject</option>
+                          </select>
+                        </label>
+                      </div>
+                      <label>Comment (min 10 chars)
+                        <textarea required minLength={10} value={assessForm.comment} onChange={e => setAssessForm(f => ({ ...f, comment: e.target.value }))} />
+                      </label>
+                      <div className="form-actions">
+                        <button type="submit" className="primary" disabled={assessLoading}>{assessLoading ? 'Submitting…' : 'Submit Assessment'}</button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+
+                {/* Decision form — manager/admin only */}
+                {canDecide && (
+                  <div className="form-block">
+                    <h5>Record Decision</h5>
+                    <p className="qual-count">
+                      Qualifying assessments: <strong>{qualifyingAssessments.length}</strong> / 2 required
+                      {currentUser && <span style={{ fontSize: 12, color: '#64748b' }}> (your own assessment as deciding manager is excluded)</span>}
+                    </p>
+                    {decideBlockReason ? (
+                      <p className="disabled-reason">{decideBlockReason}</p>
+                    ) : (
+                      <form className="risk-form" onSubmit={handleDecide}>
+                        <div className="row-2">
+                          <label>Decision
+                            <select value={decisionForm.decision} onChange={e => setDecisionForm(f => ({ ...f, decision: e.target.value }))}>
+                              <option value="accept">Accept</option>
+                              <option value="mitigate">Mitigate</option>
+                              <option value="transfer">Transfer</option>
+                              <option value="avoid">Avoid</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label>Rationale (min 20 chars)
+                          <textarea required minLength={20} value={decisionForm.rationale} onChange={e => setDecisionForm(f => ({ ...f, rationale: e.target.value }))} />
+                        </label>
+                        <div className="form-actions">
+                          <button type="submit" className="primary" disabled={decisionLoading}>{decisionLoading ? 'Recording…' : 'Record Decision'}</button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [overview, setOverview] = useState(null);
   const [trends, setTrends] = useState([]);
@@ -341,6 +814,7 @@ function App() {
           <a className={page === 'workflows' ? 'active' : ''} onClick={() => setPage('workflows')}><GitBranch size={18} /> Workflows</a>
           <a className={page === 'ai' ? 'active' : ''} onClick={() => setPage('ai')}><Bot size={18} /> AI Assistant</a>
           <a className={page === 'workforce' ? 'active' : ''} onClick={() => setPage('workforce')}><Users size={18} /> Workforce</a>
+          <a className={page === 'risks' ? 'active' : ''} onClick={() => setPage('risks')}><ShieldAlert size={18} /> Risk Review</a>
         </nav>
         <div className="side-card">
           <p>Power BI Dataset</p>
@@ -686,6 +1160,9 @@ function App() {
             </Section>
           </div>
         </>}
+
+        {/* ── RISK REVIEW ── */}
+        {page === 'risks' && <RiskReviewPage role={role} />}
 
       </main>
     </div>

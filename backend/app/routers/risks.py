@@ -194,6 +194,26 @@ def make_decision(
     return decision
 
 
+@risks_router.get("/{risk_id}/latest-package", response_model=DecisionPackageOut)
+def get_latest_package(
+    risk_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    risk = db.get(RiskItem, risk_id)
+    if not risk:
+        raise HTTPException(status_code=404, detail="Risk item not found")
+    pkg = (
+        db.query(DecisionPackage)
+        .filter(DecisionPackage.risk_item_id == risk_id)
+        .order_by(DecisionPackage.id.desc())
+        .first()
+    )
+    if not pkg:
+        raise HTTPException(status_code=404, detail="No package found for this risk item")
+    return pkg
+
+
 @packages_router.get("/{package_id}", response_model=DecisionPackageOut)
 def get_decision_package(
     package_id: int,
