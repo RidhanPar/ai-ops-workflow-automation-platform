@@ -346,6 +346,39 @@ def test_perspectives_source_fallback_provider_failure(client, operator_headers)
     assert r_pkg.json()["source"] == "fallback_provider_failure"
 
 
+def test_perspectives_source_fallback_unexpected_failure(client, operator_headers):
+    mock_provider = MagicMock()
+    mock_provider.source_label = "openai_structured_output"
+    mock_provider.complete_json.side_effect = RuntimeError("simulated auth error")
+
+    with patch("app.services.decision_package.get_llm_provider", return_value=mock_provider):
+        r_create = client.post(
+            "/risks",
+            json={
+                "title": "Source tracking test: unexpected failure",
+                "description": "This risk verifies fallback_unexpected_failure when an unknown exception is raised by the provider.",
+                "business_unit": "Platform",
+                "owner": "platform-lead",
+                "impact": 3,
+                "likelihood": 3,
+                "proposed_mitigation": "Add circuit-breaker logic and alert on unexpected provider errors.",
+            },
+            headers=operator_headers,
+        )
+        assert r_create.status_code == 201
+        r_pkg = client.post(
+            f"/risks/{r_create.json()['id']}/decision-package",
+            json={"idempotency_key": f"unexpected-fail-{r_create.json()['id']}"},
+            headers=operator_headers,
+        )
+
+    assert r_pkg.status_code == 200
+    body = r_pkg.json()
+    assert body["source"] == "fallback_unexpected_failure"
+    areas = {p["area"] for p in body["perspectives"]}
+    assert areas == {"security", "compliance", "business"}
+
+
 # ---------------------------------------------------------------------------
 # Assessments
 # ---------------------------------------------------------------------------

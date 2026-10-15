@@ -281,6 +281,14 @@ def _build_graph(db: Session, settings: "Settings") -> object:
                         risk_id=risk.id,
                         error=str(exc),
                     )
+                except Exception as exc:
+                    source = "fallback_unexpected_failure"
+                    logger.exception(
+                        "risk_perspectives_unexpected_error",
+                        trace_id=current_trace_id(),
+                        risk_id=risk.id,
+                        error_type=type(exc).__name__,
+                    )
 
             if perspectives is None:
                 perspectives = _fallback_perspectives(risk)
