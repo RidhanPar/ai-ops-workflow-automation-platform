@@ -196,6 +196,7 @@ class ReviewerAssessmentOut(BaseModel):
     id: int
     decision_package_id: int
     reviewer: str
+    perspective: str
     vote: str
     comment: str
     created_at: datetime
@@ -216,6 +217,9 @@ class DecisionPackageOut(BaseModel):
     recommended_treatment: str
     safety_flags: list[str]
     generated_by: str
+    source: str
+    cited_knowledge_ids: list[int]
+    cited_decision_ids: list[int]
     trace_id: str
     created_at: datetime
     assessments: list[ReviewerAssessmentOut] = Field(default_factory=list)
@@ -224,6 +228,7 @@ class DecisionPackageOut(BaseModel):
 
 
 class ReviewerAssessmentCreate(BaseModel):
+    perspective: Literal["security", "compliance", "business"]
     vote: Literal["accept", "mitigate", "transfer", "reject"]
     comment: str = Field(min_length=10)
 

@@ -370,6 +370,73 @@ def _seed_risk_data(db: Session) -> None:
             created_at=now - timedelta(days=60),
             updated_at=now - timedelta(days=50),
         ),
+        # Incomplete risks (no proposed_mitigation) - trigger needs_info branch
+        RiskItem(
+            title="Missing audit logs on database access layer",
+            description="Production database queries are not being logged at the application layer. Without query logs, forensic investigation of data breaches or insider threats is not possible.",
+            business_unit="Engineering",
+            owner="db-admin",
+            impact=4,
+            likelihood=3,
+            proposed_mitigation=None,
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=2),
+            updated_at=now - timedelta(days=2),
+        ),
+        RiskItem(
+            title="Unvalidated redirects in OAuth callback flow",
+            description="The OAuth callback handler accepts redirect URIs without validating against an allowlist. An attacker could craft a phishing URL that appears to originate from the trusted domain.",
+            business_unit="Engineering",
+            owner="security-lead",
+            impact=3,
+            likelihood=4,
+            proposed_mitigation=None,
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=1),
+            updated_at=now - timedelta(days=1),
+        ),
+        # Complete drafts - ready for package generation
+        RiskItem(
+            title="Legacy SSH key pairs without rotation policy",
+            description="SSH key pairs used for server access have not been rotated in over two years. Compromised keys could grant persistent access to production infrastructure without detection.",
+            business_unit="IT Security",
+            owner="it-security-lead",
+            impact=4,
+            likelihood=2,
+            proposed_mitigation="Implement a key rotation policy with a 12-month maximum lifespan. Automate rotation via the secrets management system and revoke all keys older than 24 months.",
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=4),
+            updated_at=now - timedelta(days=4),
+        ),
+        RiskItem(
+            title="No rate limiting on public API endpoints",
+            description="Public-facing API endpoints do not enforce request rate limits. A misconfigured client or attacker could flood the API, causing service degradation or elevated infrastructure costs.",
+            business_unit="Platform",
+            owner="platform-lead",
+            impact=3,
+            likelihood=3,
+            proposed_mitigation="Implement rate limiting at the API gateway. Set per-IP and per-key limits with graduated backoff. Monitor for abuse patterns using existing observability tooling.",
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=6),
+            updated_at=now - timedelta(days=6),
+        ),
+        RiskItem(
+            title="Unrestricted outbound traffic from application servers",
+            description="Application servers can make outbound connections to any internet endpoint. If compromised, malware could exfiltrate data or establish a command-and-control channel without detection.",
+            business_unit="Operations",
+            owner="ops-manager",
+            impact=4,
+            likelihood=2,
+            proposed_mitigation="Apply egress firewall rules to application servers limiting outbound connections to approved destinations. Log all denied outbound attempts to the SIEM.",
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=8),
+            updated_at=now - timedelta(days=8),
+        ),
     ]
     db.add_all(risks)
     db.flush()
@@ -384,6 +451,9 @@ def _seed_risk_data(db: Session) -> None:
         needs_info=False,
         best_practices=[],
         past_decisions=[],
+        source="seed",
+        cited_knowledge_ids=[],
+        cited_decision_ids=[],
         perspectives=[
             {
                 "area": "security",
@@ -423,6 +493,9 @@ def _seed_risk_data(db: Session) -> None:
         needs_info=False,
         best_practices=[],
         past_decisions=[],
+        source="seed",
+        cited_knowledge_ids=[],
+        cited_decision_ids=[],
         perspectives=[
             {
                 "area": "security",
@@ -462,6 +535,9 @@ def _seed_risk_data(db: Session) -> None:
         needs_info=False,
         best_practices=[],
         past_decisions=[],
+        source="seed",
+        cited_knowledge_ids=[],
+        cited_decision_ids=[],
         perspectives=[
             {
                 "area": "security",
@@ -501,6 +577,7 @@ def _seed_risk_data(db: Session) -> None:
             ReviewerAssessment(
                 decision_package_id=pkg.id,
                 reviewer="security-reviewer",
+                perspective="security",
                 vote="mitigate",
                 comment="Risk is confirmed and the mitigation plan is appropriate for the exposure level.",
                 created_at=now - timedelta(days=20),
@@ -510,6 +587,7 @@ def _seed_risk_data(db: Session) -> None:
             ReviewerAssessment(
                 decision_package_id=pkg.id,
                 reviewer="compliance-reviewer",
+                perspective="compliance",
                 vote="mitigate",
                 comment="Compliance risk is material. Mitigation aligns with regulatory and policy requirements.",
                 created_at=now - timedelta(days=19),

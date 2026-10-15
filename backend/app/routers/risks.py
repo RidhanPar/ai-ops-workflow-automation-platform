@@ -96,6 +96,7 @@ def create_or_get_decision_package(
             detail={
                 "message": "Risk item is incomplete; provide the missing fields and use a new idempotency key",
                 "gaps": package.completeness_gaps,
+                "package_id": package.id,
             },
         )
 
@@ -126,15 +127,41 @@ def make_decision(
             detail="Decision package not found for this risk item",
         )
 
-    assessment_count = (
+    latest_pkg = (
+        db.query(DecisionPackage)
+        .filter(
+            DecisionPackage.risk_item_id == risk_id,
+            DecisionPackage.needs_info.is_(False),
+        )
+        .order_by(DecisionPackage.id.desc())
+        .first()
+    )
+    if latest_pkg is None or latest_pkg.id != payload.decision_package_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Decision must reference the latest non-incomplete package for this risk item",
+        )
+
+    qualifying_count = (
         db.query(ReviewerAssessment)
-        .filter(ReviewerAssessment.decision_package_id == payload.decision_package_id)
+        .filter(
+            ReviewerAssessment.decision_package_id == payload.decision_package_id,
+            ReviewerAssessment.reviewer != user.username,
+        )
         .count()
     )
-    if assessment_count < 2:
+    if qualifying_count < 2:
         raise HTTPException(
             status_code=422,
-            detail=f"At least 2 reviewer assessments are required; {assessment_count} submitted",
+            detail={
+                "message": (
+                    f"At least 2 reviewer assessments from users other than the deciding manager are required; "
+                    f"{qualifying_count} qualifying assessment(s) found. "
+                    f"The deciding manager ({user.username}) cannot count their own assessment toward this requirement."
+                ),
+                "qualifying_count": qualifying_count,
+                "deciding_user": user.username,
+            },
         )
 
     before = {"status": risk.status, "version": risk.version}
@@ -190,9 +217,38 @@ def add_assessment(
     if not package:
         raise HTTPException(status_code=404, detail="Decision package not found")
 
+    if package.needs_info:
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot assess an incomplete package (needs_info=True); fix the risk item and generate a new package",
+        )
+
+    risk = db.get(RiskItem, package.risk_item_id)
+    if risk and risk.status == "decided":
+        raise HTTPException(
+            status_code=409,
+            detail="Risk item is already decided; no further assessments can be added",
+        )
+
+    latest_pkg = (
+        db.query(DecisionPackage)
+        .filter(
+            DecisionPackage.risk_item_id == package.risk_item_id,
+            DecisionPackage.needs_info.is_(False),
+        )
+        .order_by(DecisionPackage.id.desc())
+        .first()
+    )
+    if latest_pkg is None or latest_pkg.id != package_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Assessments can only be added to the latest non-incomplete package for this risk item",
+        )
+
     assessment = ReviewerAssessment(
         decision_package_id=package_id,
         reviewer=user.username,
+        perspective=payload.perspective,
         vote=payload.vote,
         comment=payload.comment,
     )
@@ -213,7 +269,7 @@ def add_assessment(
         "decision_package",
         package_id,
         {},
-        {"vote": payload.vote, "reviewer": user.username},
+        {"vote": payload.vote, "perspective": payload.perspective, "reviewer": user.username},
     )
     db.commit()
     db.refresh(assessment)

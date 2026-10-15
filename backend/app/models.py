@@ -187,6 +187,9 @@ class DecisionPackage(Base):
     recommended_treatment: Mapped[str] = mapped_column(String(40), default="mitigate")
     safety_flags: Mapped[list] = mapped_column(JSON, default=list)
     generated_by: Mapped[str] = mapped_column(String(80), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False, default="fallback_no_provider")
+    cited_knowledge_ids: Mapped[list] = mapped_column(JSON, default=list)
+    cited_decision_ids: Mapped[list] = mapped_column(JSON, default=list)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -205,6 +208,7 @@ class ReviewerAssessment(Base):
         ForeignKey("decision_packages.id"), nullable=False, index=True
     )
     reviewer: Mapped[str] = mapped_column(String(80), nullable=False)
+    perspective: Mapped[str] = mapped_column(String(40), nullable=False, default="security")
     vote: Mapped[str] = mapped_column(String(40), nullable=False)
     comment: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
