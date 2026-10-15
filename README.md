@@ -26,6 +26,9 @@ This portfolio project turns operational events into auditable automated actions
 | Prometheus metrics and Grafana dashboard | [`monitoring/`](monitoring/), [`docker-compose.monitoring.yml`](docker-compose.monitoring.yml) |
 | Kubernetes manifests and autoscaling | [`k8s/`](k8s/), [`.github/workflows/k8s-validate.yml`](.github/workflows/k8s-validate.yml) |
 | AI assistant offline evaluation (CI) | [`backend/evaluations/eval_ai_assistant.py`](backend/evaluations/eval_ai_assistant.py) |
+| Risk review: RBAC, packages, assessments, decisions | [`backend/app/routers/risks.py`](backend/app/routers/risks.py) |
+| Risk decision-package evaluation (CI) | [`backend/evaluations/eval_decision_packages.py`](backend/evaluations/eval_decision_packages.py) |
+| Risk review design, separation of duties | [`docs/RISK_REVIEW.md`](docs/RISK_REVIEW.md) |
 
 ## Implemented Production Signals
 
@@ -37,6 +40,7 @@ This portfolio project turns operational events into auditable automated actions
 - Idempotency keys, optimistic ticket versions, and persistent audit events.
 - Trace IDs on every request, persisted workflow/agent/LLM spans, structured JSON logs, latency, token, and cost fields.
 - Golden-dataset evaluation for routing, priority, schema, prompt injection, fallback, latency, and cost.
+- Risk review with four-role RBAC, LangGraph decision packages, multi-reviewer assessments, separation-of-duties enforcement, and pgvector similar-case retrieval.
 - Alembic migrations, separate demo seeding, development and production Docker Compose profiles.
 - GitHub Actions for linting, tests/coverage, evaluation, frontend build, migrations, and container configuration.
 
@@ -57,9 +61,14 @@ flowchart LR
     AGENT --> APPROVAL[update_ticket approval request]
     API --> ENGINE[Idempotent workflow engine]
     ENGINE --> APPROVAL
+    API --> RISK[LangGraph risk package engine]
+    RISK --> PERSPECTIVES[Three-area perspective generation]
+    RISK --> SIMILAR[pgvector similar-case retrieval]
+    RISK --> HUMANGATE[Human decision gate - RBAC SoD]
     API --> DB[(PostgreSQL + pgvector)]
     AGENT --> DB
     ENGINE --> DB
+    RISK --> DB
     DB --> TRACE[Audit events and execution traces]
     TRACE --> UI
 ```
@@ -74,6 +83,8 @@ cd ai-ops-workflow-automation-platform
 cp .env.example .env
 docker compose up --build
 ```
+
+The startup command inside the container runs `alembic upgrade head` and `seed_demo.py` automatically before the API starts, so no separate migration or seeding step is needed. Demo seeding is controlled by `DEMO_SEED_ENABLED=true` in `.env.example`.
 
 Open:
 
@@ -128,6 +139,29 @@ When no API key is set for the selected provider, the agent skips the LLM call a
 | `*_TIMEOUT_SECONDS`, `*_MAX_RETRIES` | Per-provider timeout and retry budget | `20`, `2` |
 | `ANTHROPIC_MAX_TOKENS` | Response token cap (required by the Messages API) | `1024` |
 | `*_INPUT_COST_PER_1M`, `*_OUTPUT_COST_PER_1M` | Per-provider pricing used for cost spans | provider-specific |
+
+## Risk Review
+
+The risk review workflow is documented in full in [`docs/RISK_REVIEW.md`](docs/RISK_REVIEW.md). A short summary follows.
+
+Operators create risk items (title, description, business unit, owner, impact 1-5, likelihood 1-5, proposed mitigation). Posting a risk to `POST /risks/{id}/decision-package` triggers a LangGraph pipeline that:
+
+1. Checks completeness: a package that would be generated without a mitigation plan, a meaningful description, or an owner is returned as `needs_info=true` with a list of gaps rather than calling the LLM.
+2. Generates three perspective analyses (security, compliance, business) via the provider-agnostic LLM layer. When no key is configured it uses the deterministic fallback.
+3. Retrieves similar past decisions via pgvector cosine search ranked by similarity score.
+4. Sets `needs_human_decision=true` unconditionally. The AI never sets a decision.
+
+Reviewers submit assessments (perspective, vote, comment) against the package. A manager or admin can then make a final decision, subject to separation-of-duties enforcement: at least two qualifying assessments from reviewers other than the deciding manager are required.
+
+| Endpoint | Role | Effect |
+|---|---|---|
+| `POST /risks` | operator+ | Create risk item |
+| `POST /risks/{id}/decision-package` | operator+ | Generate or idempotently retrieve a package |
+| `GET /risks/{id}/latest-package` | any authenticated | Retrieve the most recent package |
+| `POST /decision-packages/{id}/assessments` | any authenticated | Add a perspective assessment |
+| `POST /risks/{id}/decision` | manager/admin | Record a final decision |
+
+All create and decision events are written to the audit log with actor, trace ID, resource, and version.
 
 ## Observability
 
@@ -218,20 +252,39 @@ Run locally:
 
 ```bash
 cd backend
-python evaluations/run_evaluations.py
+python evaluations/run_evaluations.py        # ticket assistant (8 cases)
+python evaluations/eval_ai_assistant.py      # ticket assistant offline (8 cases)
+python evaluations/eval_decision_packages.py # risk packages fallback (25 cases)
+# with a live provider (writes a separate file, never mixed with fallback):
+python evaluations/eval_decision_packages.py --provider openai
 ```
 
-| Quality gate | Required |
-|---|---:|
-| Routing accuracy | >= 80% |
-| Priority accuracy | >= 80% |
-| JSON schema validity | 100% |
-| Prompt-injection detection | Pass |
-| Fallback availability | Pass |
-| Local average latency | < 50 ms |
-| Local evaluation cost | USD 0 |
+### Ticket assistant (8 cases, fallback mode, `backend/evaluations/results.json`)
 
-CI publishes `backend/evaluations/results.json` as an artifact. The local deterministic fallback is evaluated separately from paid-provider behavior so the demo remains reproducible.
+| Quality gate | Required | Actual |
+|---|---:|---:|
+| Routing accuracy | >= 80% | 80% |
+| Priority accuracy | >= 80% | 100% |
+| JSON schema validity | 100% | 100% |
+| Prompt-injection detection | Pass | Pass |
+| Fallback availability | Pass | Pass |
+| Local average latency | < 50 ms | < 1 ms |
+| Local evaluation cost | USD 0 | USD 0 |
+
+### Risk decision packages (25 cases, fallback mode, `backend/evaluations/risk_results.json`)
+
+| Quality gate | Threshold | Actual (fallback, 25 cases) |
+|---|---:|---:|
+| Completeness precision | >= 80% | 100% |
+| Completeness recall | >= 80% | 100% |
+| Package schema validity | >= 95% | 100% |
+| Prompt-injection flagging | 100% | 100% (3/3 cases) |
+| No auto-decision | Must pass | Pass |
+| Past-decision hit rate top-3 | >= 0% | 0% (fallback has no DB) |
+
+The past-decision hit rate is 0% in fallback mode because the offline evaluator does not connect to a database. A live LLM run (`--provider openai`) writes results to `risk_results_openai.json` and is never mixed with fallback numbers.
+
+CI uploads both results files as the `llm-evaluation-results` artifact and fails the build if any threshold is breached.
 
 ## Security and Governance
 
@@ -320,10 +373,13 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 
 ## Limits
 
-- The knowledge corpus and ticket data are fictional demo data.
-- The local deterministic embedding is designed for reproducibility, not semantic-search benchmark performance.
+- All ticket, risk, knowledge, and user data are fictional demo data seeded for local development. No real incidents, decisions, or customers are represented.
+- The local deterministic embedding is designed for zero-cost reproducibility, not semantic-search benchmark performance. pgvector similarity scores in the demo reflect embedding distances between synthetic strings.
+- Evaluation golden sets are small (8 cases for the ticket assistant, 25 for risk packages) and cover synthetic scenarios. They establish a CI baseline but do not constitute production quality benchmarks.
+- Fallback and LLM evaluation results are always reported in separate files (`results.json` / `risk_results.json` vs `risk_results_openai.json`) and are never mixed, because LLM-generated perspectives vary with model version and prompt.
+- The past-decision hit rate in the risk evaluation is 0% in fallback mode. The offline evaluator does not connect to a database, so no similar past decisions are retrieved. A live run against a seeded database would produce non-zero hit rates.
+- Human approval and separation-of-duties checks are demonstration controls implemented in application code. A production deployment would need to integrate with an organization's identity provider and authorization policy.
 - A real deployment should use managed secrets, SSO/OIDC, external telemetry export, backups, rate limiting, and organization-specific evaluation data.
-- Human approval is a demonstration control and must be adapted to real authorization policy.
 
 ## Resume Bullet
 
