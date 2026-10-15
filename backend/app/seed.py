@@ -17,6 +17,34 @@ from app.models import (
 )
 from app.services.knowledge import add_knowledge_document
 
+RISK_KNOWLEDGE_DOCUMENTS: list[tuple[str, str, list[str]]] = [
+    (
+        "Risk scoring and treatment guide",
+        "Risk score = impact x likelihood on a 1-5 scale. Scores 1-5: accept with controls. 6-11: transfer or accept. 12-19: mitigate. 20-25: avoid or escalate immediately. Document treatment rationale and residual risk.",
+        ["risk", "scoring", "treatment", "accept", "mitigate", "transfer", "avoid"],
+    ),
+    (
+        "GDPR and data protection risk policy",
+        "Personal data processing risks require a data protection impact assessment. Vendor data sharing needs a DPA. Retention breaches must be reported within 72 hours. Owners are accountable for DPIA completion.",
+        ["gdpr", "data", "compliance", "privacy", "dpia"],
+    ),
+    (
+        "Third-party and supplier risk controls",
+        "Vendors with access to production systems require annual security assessment. SLA breaches by critical vendors must be escalated to procurement and IT security. Contracts must include right-to-audit clauses.",
+        ["vendor", "supplier", "third-party", "security", "audit"],
+    ),
+    (
+        "Incident response and business continuity",
+        "Business continuity plans must be tested annually. RTO for critical systems is 4 hours. Severity-1 incidents require executive notification within 30 minutes. Post-incident review is mandatory within 5 days.",
+        ["incident", "continuity", "rto", "recovery", "escalation"],
+    ),
+    (
+        "Access control and privileged access management",
+        "Privileged access requires MFA and quarterly review. Shared accounts are prohibited. Service account passwords rotate every 90 days. Terminated employees must be deprovisioned within 24 hours.",
+        ["access", "iam", "mfa", "privileged", "deprovisioning"],
+    ),
+]
+
 
 def demo_password(username: str) -> str:
     return os.getenv(f"DEMO_{username.upper()}_PASSWORD", f"{username}-{'demo'}")
@@ -245,36 +273,8 @@ def _seed_risk_data(db: Session) -> None:
     if db.query(RiskItem).count() > 0:
         return
 
-    add_knowledge_document(
-        db,
-        "Risk scoring and treatment guide",
-        "Risk score = impact x likelihood on a 1-5 scale. Scores 1-5: accept with controls. 6-11: transfer or accept. 12-19: mitigate. 20-25: avoid or escalate immediately. Document treatment rationale and residual risk.",
-        ["risk", "scoring", "treatment", "accept", "mitigate", "transfer", "avoid"],
-    )
-    add_knowledge_document(
-        db,
-        "GDPR and data protection risk policy",
-        "Personal data processing risks require a data protection impact assessment. Vendor data sharing needs a DPA. Retention breaches must be reported within 72 hours. Owners are accountable for DPIA completion.",
-        ["gdpr", "data", "compliance", "privacy", "dpia"],
-    )
-    add_knowledge_document(
-        db,
-        "Third-party and supplier risk controls",
-        "Vendors with access to production systems require annual security assessment. SLA breaches by critical vendors must be escalated to procurement and IT security. Contracts must include right-to-audit clauses.",
-        ["vendor", "supplier", "third-party", "security", "audit"],
-    )
-    add_knowledge_document(
-        db,
-        "Incident response and business continuity",
-        "Business continuity plans must be tested annually. RTO for critical systems is 4 hours. Severity-1 incidents require executive notification within 30 minutes. Post-incident review is mandatory within 5 days.",
-        ["incident", "continuity", "rto", "recovery", "escalation"],
-    )
-    add_knowledge_document(
-        db,
-        "Access control and privileged access management",
-        "Privileged access requires MFA and quarterly review. Shared accounts are prohibited. Service account passwords rotate every 90 days. Terminated employees must be deprovisioned within 24 hours.",
-        ["access", "iam", "mfa", "privileged", "deprovisioning"],
-    )
+    for title, content, tags in RISK_KNOWLEDGE_DOCUMENTS:
+        add_knowledge_document(db, title, content, tags)
     db.commit()
 
     now = datetime.now(timezone.utc)
