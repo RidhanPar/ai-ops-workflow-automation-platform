@@ -39,8 +39,8 @@ This portfolio project turns operational events into auditable automated actions
 - Human approvals for sensitive agent and workflow actions.
 - Idempotency keys, optimistic ticket versions, and persistent audit events.
 - Trace IDs on every request, persisted workflow/agent/LLM spans, structured JSON logs, latency, token, and cost fields.
-- Golden-dataset evaluation for routing, priority, schema, prompt injection, fallback, latency, and cost.
-- Risk review with four-role RBAC, LangGraph decision packages, multi-reviewer assessments, separation-of-duties enforcement, and pgvector similar-case retrieval.
+- Golden-dataset evaluation for ticket routing, priority, schema validity and latency, plus a risk package evaluation that runs the real pipeline over 43 cases.
+- Risk review with four-role RBAC, LangGraph decision packages, multi-reviewer assessments, separation of duties checks, and retrieval of similar past decisions.
 - Alembic migrations, separate demo seeding, development and production Docker Compose profiles.
 - GitHub Actions for linting, tests/coverage, evaluation, frontend build, migrations, and container configuration.
 
@@ -62,9 +62,10 @@ flowchart LR
     API --> ENGINE[Idempotent workflow engine]
     ENGINE --> APPROVAL
     API --> RISK[LangGraph risk package engine]
-    RISK --> PERSPECTIVES[Three-area perspective generation]
-    RISK --> SIMILAR[pgvector similar-case retrieval]
-    RISK --> HUMANGATE[Human decision gate - RBAC SoD]
+    RISK --> BESTPRACTICE[Best practice search, pgvector on PostgreSQL]
+    RISK --> SIMILAR[Similar past decisions, local embeddings in Python]
+    RISK --> PERSPECTIVES[Security, compliance and business perspectives]
+    API --> HUMANGATE[Decision endpoint, manager or admin with two reviews]
     API --> DB[(PostgreSQL + pgvector)]
     AGENT --> DB
     ENGINE --> DB
@@ -144,14 +145,15 @@ When no API key is set for the selected provider, the agent skips the LLM call a
 
 The risk review workflow is documented in full in [`docs/RISK_REVIEW.md`](docs/RISK_REVIEW.md). A short summary follows.
 
-Operators create risk items (title, description, business unit, owner, impact 1-5, likelihood 1-5, proposed mitigation). Posting a risk to `POST /risks/{id}/decision-package` triggers a LangGraph pipeline that:
+Operators create risk items (title, description, business unit, owner, impact 1-5, likelihood 1-5, proposed mitigation). Posting a risk to `POST /risks/{id}/decision-package` runs a LangGraph pipeline that:
 
-1. Checks completeness: a package that would be generated without a mitigation plan, a meaningful description, or an owner is returned as `needs_info=true` with a list of gaps rather than calling the LLM.
-2. Generates three perspective analyses (security, compliance, business) via the provider-agnostic LLM layer. When no key is configured it uses the deterministic fallback.
-3. Retrieves similar past decisions via pgvector cosine search ranked by similarity score.
-4. Sets `needs_human_decision=true` unconditionally. The AI never sets a decision.
+1. Checks completeness: owner present, impact and likelihood between 1 and 5, a proposed mitigation, and a description of at least 20 characters. If anything is missing it stops, returns `needs_info=true` with the gaps, and makes no LLM call. The same step checks the title and description for five known injection phrases and records matches in `safety_flags`.
+2. Attaches the 3 closest best practice documents from the knowledge base (pgvector on PostgreSQL, a local vector ranking on SQLite).
+3. Attaches the 3 most similar decided past risks. This step embeds text with a deterministic local hashing function and ranks every decided risk by cosine similarity in Python. It does not use pgvector.
+4. Generates security, compliance and business perspectives through the provider-agnostic LLM layer, or deterministic fallback perspectives when no key is configured.
+5. Sets `risk_score` (impact × likelihood) and `recommended_treatment` (the most common suggested treatment across the three perspectives).
 
-Reviewers submit assessments (perspective, vote, comment) against the package. A manager or admin can then make a final decision, subject to separation-of-duties enforcement: at least two qualifying assessments from reviewers other than the deciding manager are required.
+The pipeline never decides. It saves the package, moves a draft risk to `in_review`, and never creates a decision or sets a risk to `decided`. Reviewers then submit assessments (perspective, vote, comment), and only a manager or admin can record the decision, after at least two assessments from reviewers other than themselves.
 
 | Endpoint | Role | Effect |
 |---|---|---|
@@ -161,7 +163,7 @@ Reviewers submit assessments (perspective, vote, comment) against the package. A
 | `POST /decision-packages/{id}/assessments` | any authenticated | Add a perspective assessment |
 | `POST /risks/{id}/decision` | manager/admin | Record a final decision |
 
-All create and decision events are written to the audit log with actor, trace ID, resource, and version.
+Risk creation, package generation, assessments and decisions each write an audit event with the actor, trace ID, resource, and state before and after.
 
 ## Observability
 
@@ -252,39 +254,51 @@ Run locally:
 
 ```bash
 cd backend
-python evaluations/run_evaluations.py        # ticket assistant (8 cases)
-python evaluations/eval_ai_assistant.py      # ticket assistant offline (8 cases)
-python evaluations/eval_decision_packages.py # risk packages fallback (25 cases)
-# with a live provider (writes a separate file, never mixed with fallback):
-python evaluations/eval_decision_packages.py --provider openai
+python evaluations/run_evaluations.py         # 5 golden tickets, writes results.json
+python evaluations/eval_ai_assistant.py       # 8 synthetic assistant cases
+python evaluations/eval_decision_packages.py  # 43 risk cases, writes risk_results.json
+# live LLM run, needs that provider's API key, writes risk_results_<provider>.json:
+python evaluations/eval_decision_packages.py --provider anthropic
 ```
 
-### Ticket assistant (8 cases, fallback mode, `backend/evaluations/results.json`)
+### Ticket assistant (5 golden tickets, `backend/evaluations/results.json`)
 
 | Quality gate | Required | Actual |
 |---|---:|---:|
-| Routing accuracy | >= 80% | 80% |
-| Priority accuracy | >= 80% | 100% |
-| JSON schema validity | 100% | 100% |
-| Prompt-injection detection | Pass | Pass |
-| Fallback availability | Pass | Pass |
-| Local average latency | < 50 ms | < 1 ms |
-| Local evaluation cost | USD 0 | USD 0 |
+| Routing accuracy | >= 80% | 80% (4/5) |
+| Priority accuracy | >= 80% | 100% (5/5) |
+| JSON schema validity | 100% | 100% (5/5) |
+| Injection check on one fixed phrase | flagged | flagged |
+| Local average latency | < 50 ms | under 1 ms |
 
-### Risk decision packages (25 cases, fallback mode, `backend/evaluations/risk_results.json`)
+These gates are asserted in `backend/tests/test_evaluations.py`. `results.json` also contains `fallback_available` and `estimated_cost_usd`, but both are constants in the script rather than measurements, so they are not reported here. `eval_ai_assistant.py` runs 8 further synthetic cases against the fallback rules, needs 6 to pass, and currently passes 8.
 
-| Quality gate | Threshold | Actual (fallback, 25 cases) |
+### Risk decision packages (43 cases, fallback mode, `backend/evaluations/risk_results.json`)
+
+Every case runs through the real `generate_decision_package` on a temporary in-memory SQLite database built from the app's models and seeded with the 5 risk management knowledge documents and 12 decided past risks (`backend/evaluations/risk_past_decisions.json`). Fallback mode uses no API key, so the perspectives come from the deterministic fallback. The 43 cases are 34 complete (18 clear, 16 borderline) and 9 incomplete, with 7 injection attempts (5 in descriptions) and 10 cases that name the past decision a reviewer would cite. Labelling rules are at the top of `backend/evaluations/risk_golden_set.json`.
+
+| Metric | Result | CI floor |
 |---|---:|---:|
-| Completeness precision | >= 80% | 100% |
-| Completeness recall | >= 80% | 100% |
-| Package schema validity | >= 95% | 100% |
-| Prompt-injection flagging | 100% | 100% (3/3 cases) |
-| No auto-decision | Must pass | Pass |
-| Past-decision hit rate top-3 | >= 0% | 0% (fallback has no DB) |
+| Completeness precision | 100% (8/8) | >= 1.00 |
+| Completeness recall | 88.9% (8/9) | >= 0.88 |
+| Gap fields match the label | 100% (8/8) | >= 1.00 |
+| Package schema validity | 100% (43/43) | >= 1.00 |
+| Treatment agreement | 55.9% (19/34) | >= 0.55 |
+| Expected past decision in the top 3 | 60% (6/10) | >= 0.60 |
+| Injection attempts flagged | 42.9% (3/7) | >= 0.42 |
+| Clean cases falsely flagged | 2.8% (1/36) | <= 0.03 |
+| Cases that produced a decision without a human | 0 of 43 | 0 |
 
-The past-decision hit rate is 0% in fallback mode because the offline evaluator does not connect to a database. A live LLM run (`--provider openai`) writes results to `risk_results_openai.json` and is never mixed with fallback numbers.
+The floors sit at the measured values, so CI fails if any metric gets worse. What the misses show:
 
-CI uploads both results files as the `llm-evaluation-results` artifact and fails the build if any threshold is breached.
+- **Completeness.** The one missed case has `TBD` as its mitigation, which passes the non-empty check.
+- **Treatment.** The fallback chooses a treatment from the score band alone and maps every score from 6 to 11 to transfer, so it disagrees with reviewers on mid-band risks that need controls. It agrees on 8 of 18 clear cases and 11 of 16 borderline cases.
+- **Past decisions.** 4 of the 10 expected precedents are not in the top 3, and one past risk about a flooded server room appears in 6 of the 10 top-3 lists. The cause has not been isolated yet.
+- **Injection.** The detector looks for five fixed phrases in the title and description. It caught 3 of the 5 attempts in descriptions, missed both attempts placed in `proposed_mitigation` and `business_unit` (fields the model receives but the detector never reads), and flagged a genuine risk that uses the word "bypass".
+
+A provider run needs that provider's API key, writes `risk_results_<provider>.json`, and leaves `risk_results.json` untouched. It fails unless every complete package used the provider's output, so a run that silently fell back cannot pass as an LLM result. Completeness, injection flags and past decision retrieval happen before the model call, so only treatment agreement and schema validity can differ between modes. No provider run has been committed yet. The provider code path is exercised in CI by `backend/tests/test_eval_decision_packages.py` with a mocked provider.
+
+CI runs all three scripts and uploads `results.json` and `risk_results.json` as the `llm-evaluation-results` artifact. `eval_decision_packages.py` and `eval_ai_assistant.py` exit with an error when a threshold fails, which fails the build.
 
 ## Security and Governance
 
@@ -374,11 +388,11 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 ## Limits
 
 - All ticket, risk, knowledge, and user data are fictional demo data seeded for local development. No real incidents, decisions, or customers are represented.
-- The local deterministic embedding is designed for zero-cost reproducibility, not semantic-search benchmark performance. pgvector similarity scores in the demo reflect embedding distances between synthetic strings.
-- Evaluation golden sets are small (8 cases for the ticket assistant, 25 for risk packages) and cover synthetic scenarios. They establish a CI baseline but do not constitute production quality benchmarks.
-- Fallback and LLM evaluation results are always reported in separate files (`results.json` / `risk_results.json` vs `risk_results_openai.json`) and are never mixed, because LLM-generated perspectives vary with model version and prompt.
-- The past-decision hit rate in the risk evaluation is 0% in fallback mode. The offline evaluator does not connect to a database, so no similar past decisions are retrieved. A live run against a seeded database would produce non-zero hit rates.
-- Human approval and separation-of-duties checks are demonstration controls implemented in application code. A production deployment would need to integrate with an organization's identity provider and authorization policy.
+- Embeddings are a deterministic 64-dimension hash of word tokens, built for zero-cost reproducible demos rather than semantic quality. Knowledge base search uses pgvector on PostgreSQL, but past decision retrieval always ranks every decided risk in Python, which will not scale to a large risk register.
+- The evaluation sets are small and synthetic: 5 golden tickets, 8 synthetic assistant cases, and 43 risk cases with 12 decided past risks. They catch regressions in CI but are not production benchmarks. Treatment and precedent labels in the risk set reflect a single reviewer's judgement.
+- Fallback and LLM risk results go to separate files (`risk_results.json` and `risk_results_<provider>.json`) and are never mixed. Only fallback results are committed, so no LLM quality numbers are claimed.
+- The prompt injection check is a list of five phrases matched in the title and description only. It records flags but blocks nothing, and the evaluation above shows what it misses.
+- Human approval and separation of duties checks are demonstration controls implemented in application code. A production deployment would need to integrate with an organization's identity provider and authorization policy.
 - A real deployment should use managed secrets, SSO/OIDC, external telemetry export, backups, rate limiting, and organization-specific evaluation data.
 
 ## Resume Bullet
