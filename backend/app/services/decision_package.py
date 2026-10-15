@@ -33,10 +33,10 @@ from app.core.metrics import (
 )
 from app.core.observability import current_trace_id, traced_span
 from app.models import DecisionPackage, RiskDecision, RiskItem
-from app.services.agent import _prompt_injection_flags
 from app.services.audit import record_audit
 from app.services.knowledge import cosine_similarity, local_embedding, search_knowledge_base
 from app.services.llm_provider import LLMProviderError, get_llm_provider
+from app.services.prompt_safety import scan_fields
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -156,7 +156,15 @@ def _build_graph(db: Session, settings: "Settings") -> object:
                 gaps.append("proposed_mitigation should be provided")
             if len(risk.description or "") < 20:
                 gaps.append("description is too short (add at least 20 characters)")
-            flags = _prompt_injection_flags(f"{risk.title} {risk.description or ''}")
+            flags = scan_fields(
+                {
+                    "title": risk.title,
+                    "description": risk.description,
+                    "proposed_mitigation": risk.proposed_mitigation,
+                    "business_unit": risk.business_unit,
+                    "owner": risk.owner,
+                }
+            )
         return {"completeness_gaps": gaps, "needs_info": len(gaps) > 0, "safety_flags": flags}
 
     def retrieve_best_practices(state: RiskPackageState) -> dict:

@@ -1,5 +1,8 @@
 import json
+import re
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.services.llm_provider import LLMResult
 from evaluations import eval_decision_packages as risk_eval
@@ -20,18 +23,22 @@ def _perspectives_reply(system: str, prompt: dict) -> LLMResult:
     return LLMResult(text=json.dumps({"perspectives": perspectives}), input_tokens=120, output_tokens=80)
 
 
-def test_provider_path_uses_provider_output_and_writes_a_separate_file(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("case_set", "results_name"),
+    [("golden", "risk_results_openai.json"), ("holdout", "risk_holdout_results_openai.json")],
+)
+def test_provider_path_uses_provider_output_and_writes_a_separate_file(tmp_path, monkeypatch, case_set, results_name):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-never-sent")
     provider = MagicMock()
     provider.source_label = "openai_structured_output"
     provider.complete_json.side_effect = _perspectives_reply
 
     with patch("app.services.decision_package.get_llm_provider", return_value=provider):
-        exit_code = risk_eval.main(["--provider", "openai"], out_dir=tmp_path)
+        exit_code = risk_eval.main(["--set", case_set, "--provider", "openai"], out_dir=tmp_path)
 
     assert exit_code == 0
-    assert [p.name for p in tmp_path.iterdir()] == ["risk_results_openai.json"]
-    results = json.loads((tmp_path / "risk_results_openai.json").read_text(encoding="utf-8"))
+    assert [p.name for p in tmp_path.iterdir()] == [results_name]
+    results = json.loads((tmp_path / results_name).read_text(encoding="utf-8"))
     assert results["mode"] == "openai"
     complete = [case for case in results["cases"] if not case["needs_info"]]
     assert provider.complete_json.call_count == len(complete)
@@ -67,3 +74,25 @@ def test_golden_set_covers_the_required_case_types():
             assert case["expected_gaps"]
         else:
             assert case["expected_treatment"] in risk_eval.TREATMENTS
+
+
+def test_holdout_set_covers_every_prompt_field_and_ordinary_trigger_words():
+    cases = json.loads(risk_eval.HOLDOUT_PATH.read_text(encoding="utf-8"))["cases"]
+    golden_ids = {c["id"] for c in json.loads(risk_eval.GOLDEN_PATH.read_text(encoding="utf-8"))["cases"]}
+    past_keys = {d["key"] for d in json.loads(risk_eval.PAST_DECISIONS_PATH.read_text(encoding="utf-8"))["decisions"]}
+    fields = ("title", "description", "proposed_mitigation", "business_unit", "owner")
+
+    injections = [case for case in cases if case.get("injection_field")]
+    assert len(injections) >= 8
+    assert {case["injection_field"] for case in injections} == set(fields)
+    clean_with_trigger_words = [
+        case
+        for case in cases
+        if not case.get("injection_field")
+        and re.search(r"bypass|overrid|ignor|instruction", " ".join(str(case.get(f) or "") for f in fields), re.IGNORECASE)
+    ]
+    assert len(clean_with_trigger_words) >= 8
+    expected_past = [case["expected_similar_past"] for case in cases if case.get("expected_similar_past")]
+    assert len(expected_past) >= 4
+    assert set(expected_past) <= past_keys
+    assert not {case["id"] for case in cases} & golden_ids

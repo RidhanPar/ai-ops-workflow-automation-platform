@@ -29,12 +29,14 @@ jobs:
       - run: python evaluations/run_evaluations.py
       - run: python evaluations/eval_ai_assistant.py
       - run: python evaluations/eval_decision_packages.py
+      - run: python evaluations/eval_decision_packages.py --set holdout
       - uses: actions/upload-artifact@v7
         with:
           name: llm-evaluation-results
           path: |
             backend/evaluations/results.json
             backend/evaluations/risk_results.json
+            backend/evaluations/risk_holdout_results.json
 
   frontend-build:
     runs-on: ubuntu-latest

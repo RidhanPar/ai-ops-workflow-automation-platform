@@ -1,0 +1,129 @@
+{
+  "decision_rule": "Change EMBEDDING_DIMENSIONS only if a larger size gives strictly more top-3 hits than 64 on both the golden and the held-out set. If several sizes qualify, take the smallest.",
+  "rows": [
+    {
+      "dimensions": 64,
+      "golden": {
+        "past_decision_hit_rate_top3": {
+          "value": 0.6,
+          "hits": 6,
+          "total": 10
+        },
+        "misses": [
+          "rg-003",
+          "rg-008",
+          "rg-009",
+          "rg-010"
+        ],
+        "most_retrieved_past_decision": {
+          "key": "pd-server-room-flood",
+          "in_top3_lists": 20,
+          "complete_cases": 35
+        }
+      },
+      "holdout": {
+        "past_decision_hit_rate_top3": {
+          "value": 0.8,
+          "hits": 4,
+          "total": 5
+        },
+        "misses": [
+          "ho-029"
+        ],
+        "most_retrieved_past_decision": {
+          "key": "pd-server-room-flood",
+          "in_top3_lists": 16,
+          "complete_cases": 29
+        }
+      }
+    },
+    {
+      "dimensions": 256,
+      "golden": {
+        "past_decision_hit_rate_top3": {
+          "value": 0.9,
+          "hits": 9,
+          "total": 10
+        },
+        "misses": [
+          "rg-003"
+        ],
+        "most_retrieved_past_decision": {
+          "key": "pd-server-room-flood",
+          "in_top3_lists": 25,
+          "complete_cases": 35
+        }
+      },
+      "holdout": {
+        "past_decision_hit_rate_top3": {
+          "value": 1.0,
+          "hits": 5,
+          "total": 5
+        },
+        "misses": [],
+        "most_retrieved_past_decision": {
+          "key": "pd-server-room-flood",
+          "in_top3_lists": 20,
+          "complete_cases": 29
+        }
+      }
+    },
+    {
+      "dimensions": 512,
+      "golden": {
+        "past_decision_hit_rate_top3": {
+          "value": 1.0,
+          "hits": 10,
+          "total": 10
+        },
+        "misses": [],
+        "most_retrieved_past_decision": {
+          "key": "pd-server-room-flood",
+          "in_top3_lists": 29,
+          "complete_cases": 35
+        }
+      },
+      "holdout": {
+        "past_decision_hit_rate_top3": {
+          "value": 1.0,
+          "hits": 5,
+          "total": 5
+        },
+        "misses": [],
+        "most_retrieved_past_decision": {
+          "key": "pd-server-room-flood",
+          "in_top3_lists": 22,
+          "complete_cases": 29
+        }
+      }
+    }
+  ],
+  "sizes_that_improve_both_sets": [
+    256,
+    512
+  ],
+  "chosen_dimensions": 256,
+  "hub_diagnostic": {
+    "method": "Diagnostic only, outside the pipeline: re-ranks the decided past risks for every expected-complete case in both sets with app.services.knowledge.local_embedding and cosine_similarity at the chosen size, on the same title and description text the pipeline embeds, once as built and once with common English stopwords removed from both sides.",
+    "dimensions": 256,
+    "cases": 63,
+    "as_built": {
+      "pd-server-room-flood_in_top3_lists": 44,
+      "most_retrieved": {
+        "key": "pd-server-room-flood",
+        "in_top3_lists": 44
+      }
+    },
+    "stopwords_removed": {
+      "pd-server-room-flood_in_top3_lists": 12,
+      "most_retrieved": {
+        "key": "pd-admin-mfa",
+        "in_top3_lists": 30
+      }
+    },
+    "stopword_share": {
+      "pd-server-room-flood": 0.41,
+      "other_past_risks_mean": 0.24
+    }
+  }
+}

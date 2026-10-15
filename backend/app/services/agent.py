@@ -21,6 +21,7 @@ from app.schemas import TicketAnalysis
 from app.services.audit import record_audit
 from app.services.knowledge import search_knowledge_base
 from app.services.llm_provider import LLMProviderError, get_llm_provider
+from app.services.prompt_safety import detect_prompt_injection
 
 settings = get_settings()
 
@@ -59,8 +60,7 @@ def _fallback_analysis(title: str, description: str, channel: str = "email") -> 
 
 
 def _prompt_injection_flags(value: str) -> list[str]:
-    indicators = ["ignore previous", "system prompt", "reveal secret", "developer message", "bypass"]
-    return [f"prompt_injection:{indicator}" for indicator in indicators if indicator in value.lower()]
+    return [f"prompt_injection:{category}" for category in detect_prompt_injection(value)]
 
 
 def get_customer_history(db: Session, customer: str, exclude_ticket_id: int) -> list[dict]:

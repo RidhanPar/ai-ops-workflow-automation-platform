@@ -7,15 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.models import KnowledgeDocument
 
-EMBEDDING_DIMENSIONS = 64
+EMBEDDING_DIMENSIONS = 256
 
 
-def local_embedding(value: str) -> list[float]:
+def local_embedding(value: str, dimensions: int | None = None) -> list[float]:
     """Create a deterministic local embedding for zero-cost demo retrieval."""
-    vector = [0.0] * EMBEDDING_DIMENSIONS
+    size = dimensions or EMBEDDING_DIMENSIONS
+    vector = [0.0] * size
     for token in re.findall(r"[a-z0-9]+", value.lower()):
         digest = hashlib.sha256(token.encode("utf-8")).digest()
-        index = int.from_bytes(digest[:2], "big") % EMBEDDING_DIMENSIONS
+        index = int.from_bytes(digest[:2], "big") % size
         vector[index] += 1 if digest[2] % 2 == 0 else -1
     norm = math.sqrt(sum(item * item for item in vector)) or 1
     return [round(item / norm, 6) for item in vector]
