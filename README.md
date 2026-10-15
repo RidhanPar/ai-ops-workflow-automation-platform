@@ -269,9 +269,8 @@ python evaluations/eval_decision_packages.py --provider anthropic
 | Priority accuracy | >= 80% | 100% (5/5) |
 | JSON schema validity | 100% | 100% (5/5) |
 | Injection check on one fixed phrase | flagged | flagged |
-| Local average latency | < 50 ms | under 1 ms |
 
-These gates are asserted in `backend/tests/test_evaluations.py`. `results.json` also contains `fallback_available` and `estimated_cost_usd`, but both are constants in the script rather than measurements, so they are not reported here. `eval_ai_assistant.py` runs 8 further synthetic cases against the fallback rules, needs 6 to pass, and currently passes 8.
+These gates are asserted in `backend/tests/test_evaluations.py`, which also requires the average latency per ticket to stay under 50 ms. The script prints that latency but keeps it out of `results.json`, because it changes on every run and the committed file should only change when a result changes. `results.json` also contains `fallback_available` and `estimated_cost_usd`, but both are constants in the script rather than measurements, so they are not reported here. `eval_ai_assistant.py` runs 8 further synthetic cases against the fallback rules, needs 6 to pass, and currently passes 8.
 
 ### Risk decision packages (43 cases, fallback mode, `backend/evaluations/risk_results.json`)
 
