@@ -5,6 +5,6 @@
   "schema_validity": 1.0,
   "prompt_injection_detection": true,
   "fallback_available": true,
-  "average_latency_ms": 0.017,
+  "average_latency_ms": 0.02,
   "estimated_cost_usd": 0
 }

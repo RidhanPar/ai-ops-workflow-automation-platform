@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -146,6 +146,86 @@ class ApprovalRequest(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RiskItem(Base):
+    __tablename__ = "risk_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    business_unit: Mapped[str] = mapped_column(String(120), nullable=False)
+    owner: Mapped[str] = mapped_column(String(120), nullable=False)
+    impact: Mapped[int] = mapped_column(Integer, nullable=False)
+    likelihood: Mapped[int] = mapped_column(Integer, nullable=False)
+    proposed_mitigation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="draft")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    packages = relationship("DecisionPackage", back_populates="risk_item")
+    decisions = relationship("RiskDecision", back_populates="risk_item")
+
+
+class DecisionPackage(Base):
+    __tablename__ = "decision_packages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    risk_item_id: Mapped[int] = mapped_column(ForeignKey("risk_items.id"), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    completeness_gaps: Mapped[list] = mapped_column(JSON, default=list)
+    needs_info: Mapped[bool] = mapped_column(Boolean, default=False)
+    best_practices: Mapped[list] = mapped_column(JSON, default=list)
+    past_decisions: Mapped[list] = mapped_column(JSON, default=list)
+    perspectives: Mapped[list] = mapped_column(JSON, default=list)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0)
+    recommended_treatment: Mapped[str] = mapped_column(String(40), default="mitigate")
+    safety_flags: Mapped[list] = mapped_column(JSON, default=list)
+    generated_by: Mapped[str] = mapped_column(String(80), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    risk_item = relationship("RiskItem", back_populates="packages")
+    assessments = relationship("ReviewerAssessment", back_populates="package")
+
+
+class ReviewerAssessment(Base):
+    __tablename__ = "reviewer_assessments"
+    __table_args__ = (
+        UniqueConstraint("decision_package_id", "reviewer", name="uq_assessment_package_reviewer"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    decision_package_id: Mapped[int] = mapped_column(
+        ForeignKey("decision_packages.id"), nullable=False, index=True
+    )
+    reviewer: Mapped[str] = mapped_column(String(80), nullable=False)
+    vote: Mapped[str] = mapped_column(String(40), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    package = relationship("DecisionPackage", back_populates="assessments")
+
+
+class RiskDecision(Base):
+    __tablename__ = "risk_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    risk_item_id: Mapped[int] = mapped_column(ForeignKey("risk_items.id"), nullable=False, index=True)
+    decision_package_id: Mapped[int] = mapped_column(
+        ForeignKey("decision_packages.id"), nullable=False
+    )
+    decided_by: Mapped[str] = mapped_column(String(80), nullable=False)
+    decision: Mapped[str] = mapped_column(String(40), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    risk_item = relationship("RiskItem", back_populates="decisions")
 
 
 class TraceSpan(Base):

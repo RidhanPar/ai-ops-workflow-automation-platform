@@ -4,7 +4,17 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
-from app.models import Agent, KnowledgeDocument, Ticket, User, WorkflowRule
+from app.models import (
+    Agent,
+    DecisionPackage,
+    KnowledgeDocument,
+    ReviewerAssessment,
+    RiskDecision,
+    RiskItem,
+    Ticket,
+    User,
+    WorkflowRule,
+)
 from app.services.knowledge import add_knowledge_document
 
 
@@ -226,4 +236,315 @@ def seed_demo_data(db: Session) -> None:
         ),
     ]
     db.add_all(workflows)
+    db.commit()
+
+    _seed_risk_data(db)
+
+
+def _seed_risk_data(db: Session) -> None:
+    if db.query(RiskItem).count() > 0:
+        return
+
+    add_knowledge_document(
+        db,
+        "Risk scoring and treatment guide",
+        "Risk score = impact x likelihood on a 1-5 scale. Scores 1-5: accept with controls. 6-11: transfer or accept. 12-19: mitigate. 20-25: avoid or escalate immediately. Document treatment rationale and residual risk.",
+        ["risk", "scoring", "treatment", "accept", "mitigate", "transfer", "avoid"],
+    )
+    add_knowledge_document(
+        db,
+        "GDPR and data protection risk policy",
+        "Personal data processing risks require a data protection impact assessment. Vendor data sharing needs a DPA. Retention breaches must be reported within 72 hours. Owners are accountable for DPIA completion.",
+        ["gdpr", "data", "compliance", "privacy", "dpia"],
+    )
+    add_knowledge_document(
+        db,
+        "Third-party and supplier risk controls",
+        "Vendors with access to production systems require annual security assessment. SLA breaches by critical vendors must be escalated to procurement and IT security. Contracts must include right-to-audit clauses.",
+        ["vendor", "supplier", "third-party", "security", "audit"],
+    )
+    add_knowledge_document(
+        db,
+        "Incident response and business continuity",
+        "Business continuity plans must be tested annually. RTO for critical systems is 4 hours. Severity-1 incidents require executive notification within 30 minutes. Post-incident review is mandatory within 5 days.",
+        ["incident", "continuity", "rto", "recovery", "escalation"],
+    )
+    add_knowledge_document(
+        db,
+        "Access control and privileged access management",
+        "Privileged access requires MFA and quarterly review. Shared accounts are prohibited. Service account passwords rotate every 90 days. Terminated employees must be deprovisioned within 24 hours.",
+        ["access", "iam", "mfa", "privileged", "deprovisioning"],
+    )
+    db.commit()
+
+    now = datetime.now(timezone.utc)
+    risks = [
+        RiskItem(
+            title="Customer PII stored in unencrypted S3 bucket",
+            description="Analytics pipeline writes customer identifiers and behavioural data to an S3 bucket without server-side encryption. Misconfigured bucket policy would expose PII to unauthorised parties.",
+            business_unit="Data Platform",
+            owner="data-platform-lead",
+            impact=5,
+            likelihood=3,
+            proposed_mitigation="Enable S3 SSE-KMS on the bucket and enforce encryption via bucket policy. Rotate existing objects with an S3 Batch Operations job.",
+            status="decided",
+            version=2,
+            created_at=now - timedelta(days=30),
+            updated_at=now - timedelta(days=20),
+        ),
+        RiskItem(
+            title="Payment processor single point of failure",
+            description="All payment transactions route through a single gateway integration with no fallback. A provider outage or API deprecation halts all revenue collection until manual intervention.",
+            business_unit="Payments",
+            owner="payments-lead",
+            impact=5,
+            likelihood=2,
+            proposed_mitigation="Add a secondary payment gateway in active-passive configuration with automatic circuit-breaker failover.",
+            status="in_review",
+            version=1,
+            created_at=now - timedelta(days=10),
+            updated_at=now - timedelta(days=10),
+        ),
+        RiskItem(
+            title="GDPR consent gap in marketing email system",
+            description="The marketing email platform does not record granular consent timestamps per subscriber. A data subject access request cannot produce a full audit trail of consent, exposing the organisation to GDPR enforcement.",
+            business_unit="Marketing",
+            owner="privacy-officer",
+            impact=4,
+            likelihood=4,
+            proposed_mitigation="Extend the subscriber schema to record ISO-8601 consent timestamps and opt-in source. Retroactively re-confirm consent for subscribers added before the change.",
+            status="in_review",
+            version=1,
+            created_at=now - timedelta(days=7),
+            updated_at=now - timedelta(days=7),
+        ),
+        RiskItem(
+            title="Privileged database credentials hardcoded in CI pipeline",
+            description="Database migration scripts in the internal repository contain production credentials in plain text. Any developer with repository access can connect directly to the production database.",
+            business_unit="Engineering",
+            owner="security-lead",
+            impact=5,
+            likelihood=4,
+            proposed_mitigation="Remove credentials from repository immediately. Rotate all affected passwords. Move secrets to a vault solution and inject via environment at runtime.",
+            status="decided",
+            version=2,
+            created_at=now - timedelta(days=45),
+            updated_at=now - timedelta(days=35),
+        ),
+        RiskItem(
+            title="Third-party analytics SDK collecting data without DPA",
+            description="A front-end analytics library from a US-based vendor sends page interaction data including IP addresses to servers outside the EU. No data processing agreement is in place with this vendor.",
+            business_unit="Product",
+            owner="privacy-officer",
+            impact=3,
+            likelihood=5,
+            proposed_mitigation="Suspend the SDK immediately. Evaluate an EU-hosted alternative or negotiate a GDPR-compliant DPA with the current vendor before reactivation.",
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=3),
+            updated_at=now - timedelta(days=3),
+        ),
+        RiskItem(
+            title="No tested disaster recovery plan for core API",
+            description="The operations team has never run a full DR test for the main API service. The documented RTO is 4 hours but no evidence exists that this target is achievable.",
+            business_unit="Operations",
+            owner="ops-manager",
+            impact=4,
+            likelihood=3,
+            proposed_mitigation="Schedule a DR exercise in a staging environment within Q1. Document RTO evidence and create an annual DR test calendar.",
+            status="draft",
+            version=1,
+            created_at=now - timedelta(days=5),
+            updated_at=now - timedelta(days=5),
+        ),
+        RiskItem(
+            title="Stale vendor access to production environment",
+            description="Three former contractors still have active VPN credentials and service account access to the production Kubernetes cluster. Accounts were not deprovisioned at contract end.",
+            business_unit="IT Security",
+            owner="it-security-lead",
+            impact=5,
+            likelihood=2,
+            proposed_mitigation="Revoke access immediately. Audit all service accounts created in the last 18 months. Automate deprovisioning via the HR system offboarding workflow.",
+            status="decided",
+            version=2,
+            created_at=now - timedelta(days=60),
+            updated_at=now - timedelta(days=50),
+        ),
+    ]
+    db.add_all(risks)
+    db.flush()
+
+    decided = {r.title: r for r in risks if r.status == "decided"}
+
+    pii_risk = decided["Customer PII stored in unencrypted S3 bucket"]
+    pii_pkg = DecisionPackage(
+        risk_item_id=pii_risk.id,
+        idempotency_key="seed-pkg-pii-s3-001",
+        completeness_gaps=[],
+        needs_info=False,
+        best_practices=[],
+        past_decisions=[],
+        perspectives=[
+            {
+                "area": "security",
+                "key_concerns": ["Unencrypted data at rest violates data security standards"],
+                "reviewer_questions": ["Is the bucket publicly accessible?"],
+                "suggested_treatment": "mitigate",
+                "confidence": 0.9,
+            },
+            {
+                "area": "compliance",
+                "key_concerns": ["GDPR Article 32 requires appropriate technical security measures"],
+                "reviewer_questions": ["Is a DPIA required for this data store?"],
+                "suggested_treatment": "mitigate",
+                "confidence": 0.9,
+            },
+            {
+                "area": "business",
+                "key_concerns": ["Regulatory fine risk up to 4% of annual global turnover"],
+                "reviewer_questions": ["What is the volume and sensitivity of data affected?"],
+                "suggested_treatment": "mitigate",
+                "confidence": 0.8,
+            },
+        ],
+        risk_score=15,
+        recommended_treatment="mitigate",
+        safety_flags=[],
+        generated_by="seed",
+        trace_id="seed-trace-pii-001",
+        created_at=now - timedelta(days=25),
+    )
+
+    creds_risk = decided["Privileged database credentials hardcoded in CI pipeline"]
+    creds_pkg = DecisionPackage(
+        risk_item_id=creds_risk.id,
+        idempotency_key="seed-pkg-creds-ci-001",
+        completeness_gaps=[],
+        needs_info=False,
+        best_practices=[],
+        past_decisions=[],
+        perspectives=[
+            {
+                "area": "security",
+                "key_concerns": ["Exposed credentials allow direct unauthorised production DB access"],
+                "reviewer_questions": ["How many developers have repository access?"],
+                "suggested_treatment": "avoid",
+                "confidence": 0.95,
+            },
+            {
+                "area": "compliance",
+                "key_concerns": ["Credential exposure may trigger breach notification obligations"],
+                "reviewer_questions": ["Has any unauthorised access occurred?"],
+                "suggested_treatment": "avoid",
+                "confidence": 0.9,
+            },
+            {
+                "area": "business",
+                "key_concerns": ["Immediate reputational and operational risk"],
+                "reviewer_questions": ["Is there evidence of data exfiltration?"],
+                "suggested_treatment": "avoid",
+                "confidence": 0.9,
+            },
+        ],
+        risk_score=20,
+        recommended_treatment="avoid",
+        safety_flags=[],
+        generated_by="seed",
+        trace_id="seed-trace-creds-001",
+        created_at=now - timedelta(days=40),
+    )
+
+    vendor_risk = decided["Stale vendor access to production environment"]
+    vendor_pkg = DecisionPackage(
+        risk_item_id=vendor_risk.id,
+        idempotency_key="seed-pkg-vendor-access-001",
+        completeness_gaps=[],
+        needs_info=False,
+        best_practices=[],
+        past_decisions=[],
+        perspectives=[
+            {
+                "area": "security",
+                "key_concerns": ["Stale privileged access is a critical attack surface"],
+                "reviewer_questions": ["Have the stale credentials been used recently?"],
+                "suggested_treatment": "mitigate",
+                "confidence": 0.9,
+            },
+            {
+                "area": "compliance",
+                "key_concerns": ["Access control policy requires quarterly access review"],
+                "reviewer_questions": ["When was the last formal access review conducted?"],
+                "suggested_treatment": "mitigate",
+                "confidence": 0.85,
+            },
+            {
+                "area": "business",
+                "key_concerns": ["Production environment compromise risk"],
+                "reviewer_questions": ["Which production systems can the stale accounts access?"],
+                "suggested_treatment": "mitigate",
+                "confidence": 0.85,
+            },
+        ],
+        risk_score=10,
+        recommended_treatment="mitigate",
+        safety_flags=[],
+        generated_by="seed",
+        trace_id="seed-trace-vendor-001",
+        created_at=now - timedelta(days=55),
+    )
+
+    db.add_all([pii_pkg, creds_pkg, vendor_pkg])
+    db.flush()
+
+    for pkg in [pii_pkg, creds_pkg, vendor_pkg]:
+        db.add(
+            ReviewerAssessment(
+                decision_package_id=pkg.id,
+                reviewer="security-reviewer",
+                vote="mitigate",
+                comment="Risk is confirmed and the mitigation plan is appropriate for the exposure level.",
+                created_at=now - timedelta(days=20),
+            )
+        )
+        db.add(
+            ReviewerAssessment(
+                decision_package_id=pkg.id,
+                reviewer="compliance-reviewer",
+                vote="mitigate",
+                comment="Compliance risk is material. Mitigation aligns with regulatory and policy requirements.",
+                created_at=now - timedelta(days=19),
+            )
+        )
+    db.flush()
+
+    db.add(
+        RiskDecision(
+            risk_item_id=pii_risk.id,
+            decision_package_id=pii_pkg.id,
+            decided_by="manager",
+            decision="mitigate",
+            rationale="Encryption is a standard, low-cost control. Mitigation approved. Implement SSE-KMS within 30 days.",
+            created_at=now - timedelta(days=18),
+        )
+    )
+    db.add(
+        RiskDecision(
+            risk_item_id=creds_risk.id,
+            decision_package_id=creds_pkg.id,
+            decided_by="manager",
+            decision="mitigate",
+            rationale="Immediate credential rotation required. Vault adoption approved as long-term control. Zero tolerance for plaintext credentials in source control.",
+            created_at=now - timedelta(days=38),
+        )
+    )
+    db.add(
+        RiskDecision(
+            risk_item_id=vendor_risk.id,
+            decision_package_id=vendor_pkg.id,
+            decided_by="manager",
+            decision="mitigate",
+            rationale="Access revoked immediately. Automated deprovisioning via HR integration approved for implementation within 60 days.",
+            created_at=now - timedelta(days=52),
+        )
+    )
     db.commit()

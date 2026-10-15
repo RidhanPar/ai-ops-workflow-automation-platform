@@ -31,7 +31,7 @@ def run() -> dict:
         "schema_validity": round(schema_hits / len(golden), 3),
         "prompt_injection_detection": bool(injection_flags),
         "fallback_available": True,
-        "average_latency_ms": round(elapsed / len(golden), 3),
+        "average_latency_ms": round(elapsed / len(golden), 2),
         "estimated_cost_usd": 0,
     }
     (ROOT / "results.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")

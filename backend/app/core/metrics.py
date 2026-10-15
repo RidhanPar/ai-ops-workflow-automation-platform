@@ -36,3 +36,22 @@ human_approval_gates_triggered_total = Counter(
     "Total number of human approval gate triggers",
     ["action_type"],
 )
+
+# Risk review metrics
+risk_packages_generated_total = Counter(
+    "risk_packages_generated_total",
+    "Total number of risk decision packages generated",
+    ["outcome"],  # success | needs_info | error
+)
+
+risk_assessment_duration_seconds = Histogram(
+    "risk_assessment_duration_seconds",
+    "Time to generate a full decision package in seconds",
+    buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+)
+
+risk_decisions_total = Counter(
+    "risk_decisions_total",
+    "Total number of risk decisions recorded",
+    ["decision"],  # accept | mitigate | transfer | avoid
+)

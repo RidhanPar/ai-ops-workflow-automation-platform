@@ -41,3 +41,10 @@ def manager_headers(client):
     response = client.post("/auth/token", data={"username": "manager", "password": demo_password("manager")})
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture()
+def viewer_headers(client):
+    response = client.post("/auth/token", data={"username": "viewer", "password": demo_password("viewer")})
+    assert response.status_code == 200
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}

@@ -39,6 +39,43 @@ Use only these teams: Billing Ops, Technical Support, Policy Ops, Workforce Desk
 # Tool definition used by AnthropicProvider to enforce structured JSON output.
 # Forcing tool use is more reliable than asking the model to output raw JSON because
 # the model cannot omit or reformat required fields when bound to a schema.
+_PERSPECTIVES_TOOL_SCHEMA: dict = {
+    "name": "generate_perspectives",
+    "description": "Generate security, compliance, and business expert perspectives on the risk item.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "perspectives": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "area": {
+                            "type": "string",
+                            "enum": ["security", "compliance", "business"],
+                        },
+                        "key_concerns": {"type": "array", "items": {"type": "string"}},
+                        "reviewer_questions": {"type": "array", "items": {"type": "string"}},
+                        "suggested_treatment": {
+                            "type": "string",
+                            "enum": ["accept", "mitigate", "transfer", "avoid"],
+                        },
+                        "confidence": {"type": "number"},
+                    },
+                    "required": [
+                        "area",
+                        "key_concerns",
+                        "reviewer_questions",
+                        "suggested_treatment",
+                        "confidence",
+                    ],
+                },
+            }
+        },
+        "required": ["perspectives"],
+    },
+}
+
 _ANALYSIS_TOOL_SCHEMA: dict = {
     "name": "analyze_ticket",
     "description": "Return a structured analysis of the support ticket.",
@@ -105,6 +142,10 @@ class LLMProvider(ABC):
     def complete(self, prompt: dict) -> LLMResult:
         """Send the prompt to the model and return its text response and token usage."""
 
+    def complete_json(self, system: str, prompt: dict) -> LLMResult:
+        """Like complete() but with custom system instructions for non-ticket use cases."""
+        raise NotImplementedError(f"{type(self).__name__} must implement complete_json")
+
 
 def _strip_fences(text: str) -> str:
     """Strip markdown code fences from a string, keeping the interior content.
@@ -153,6 +194,35 @@ class OpenAIProvider(LLMProvider):
     def complete(self, prompt: dict) -> LLMResult:
         try:
             response = self._invoke(prompt)
+        except (OpenAIAPITimeoutError, OpenAIAPIConnectionError, OpenAIRateLimitError) as exc:
+            raise LLMProviderError(f"OpenAI request failed: {exc}") from exc
+
+        usage = getattr(response, "usage", None)
+        return LLMResult(
+            text=response.output_text,
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        )
+
+    @retry(
+        retry=retry_if_exception_type(
+            (OpenAIAPITimeoutError, OpenAIAPIConnectionError, OpenAIRateLimitError)
+        ),
+        wait=wait_exponential(min=1, max=4),
+        stop=stop_after_attempt(_settings.openai_max_retries + 1),
+        reraise=True,
+    )
+    def _invoke_json(self, system: str, prompt: dict):
+        return self._client.responses.create(
+            model=self._settings.openai_model,
+            instructions=system,
+            input=json.dumps(prompt),
+            text={"format": {"type": "json_object"}},
+        )
+
+    def complete_json(self, system: str, prompt: dict) -> LLMResult:
+        try:
+            response = self._invoke_json(system, prompt)
         except (OpenAIAPITimeoutError, OpenAIAPIConnectionError, OpenAIRateLimitError) as exc:
             raise LLMProviderError(f"OpenAI request failed: {exc}") from exc
 
@@ -213,6 +283,54 @@ class AnthropicProvider(LLMProvider):
                 break
         else:
             # Secondary path: join text blocks and strip any markdown fences.
+            raw = "".join(
+                block.text for block in response.content if getattr(block, "type", None) == "text"
+            )
+            text = _strip_fences(raw)
+
+        usage = getattr(response, "usage", None)
+        return LLMResult(
+            text=text,
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        )
+
+    @retry(
+        retry=retry_if_exception_type(
+            (AnthropicAPITimeoutError, AnthropicAPIConnectionError, AnthropicRateLimitError)
+        ),
+        wait=wait_exponential(min=1, max=4),
+        stop=stop_after_attempt(_settings.anthropic_max_retries + 1),
+        reraise=True,
+    )
+    def _invoke_json(self, system: str, prompt: dict):
+        return self._client.messages.create(
+            model=self._settings.anthropic_model,
+            max_tokens=self._settings.anthropic_max_tokens,
+            system=system,
+            tools=[_PERSPECTIVES_TOOL_SCHEMA],
+            tool_choice={"type": "tool", "name": "generate_perspectives"},
+            messages=[{"role": "user", "content": json.dumps(prompt)}],
+        )
+
+    def complete_json(self, system: str, prompt: dict) -> LLMResult:
+        try:
+            response = self._invoke_json(system, prompt)
+        except (
+            AnthropicAPITimeoutError,
+            AnthropicAPIConnectionError,
+            AnthropicRateLimitError,
+        ) as exc:
+            raise LLMProviderError(f"Anthropic request failed: {exc}") from exc
+
+        for block in response.content:
+            if (
+                getattr(block, "type", None) == "tool_use"
+                and getattr(block, "name", None) == "generate_perspectives"
+            ):
+                text = json.dumps(block.input)
+                break
+        else:
             raw = "".join(
                 block.text for block in response.content if getattr(block, "type", None) == "text"
             )

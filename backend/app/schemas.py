@@ -161,6 +161,92 @@ class TrendPoint(BaseModel):
     resolved: int
 
 
+class RiskItemCreate(BaseModel):
+    title: str = Field(min_length=5, max_length=255)
+    description: str = Field(min_length=10)
+    business_unit: str = Field(min_length=1, max_length=120)
+    owner: str = Field(min_length=1, max_length=120)
+    impact: int = Field(ge=1, le=5)
+    likelihood: int = Field(ge=1, le=5)
+    proposed_mitigation: str | None = None
+
+
+class RiskItemOut(BaseModel):
+    id: int
+    title: str
+    description: str
+    business_unit: str
+    owner: str
+    impact: int
+    likelihood: int
+    proposed_mitigation: str | None
+    status: str
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DecisionPackageRequest(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=160)
+
+
+class ReviewerAssessmentOut(BaseModel):
+    id: int
+    decision_package_id: int
+    reviewer: str
+    vote: str
+    comment: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DecisionPackageOut(BaseModel):
+    id: int
+    risk_item_id: int
+    idempotency_key: str
+    completeness_gaps: list[str]
+    needs_info: bool
+    best_practices: list[dict]
+    past_decisions: list[dict]
+    perspectives: list[dict]
+    risk_score: int
+    recommended_treatment: str
+    safety_flags: list[str]
+    generated_by: str
+    trace_id: str
+    created_at: datetime
+    assessments: list[ReviewerAssessmentOut] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ReviewerAssessmentCreate(BaseModel):
+    vote: Literal["accept", "mitigate", "transfer", "reject"]
+    comment: str = Field(min_length=10)
+
+
+class RiskDecisionCreate(BaseModel):
+    decision: Literal["accept", "mitigate", "transfer", "avoid"]
+    rationale: str = Field(min_length=20)
+    decision_package_id: int
+    version: int
+
+
+class RiskDecisionOut(BaseModel):
+    id: int
+    risk_item_id: int
+    decision_package_id: int
+    decided_by: str
+    decision: str
+    rationale: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class PowerBITicketRow(BaseModel):
     ticket_id: int
     external_id: str

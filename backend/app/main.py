@@ -11,6 +11,7 @@ from app.core.logging import configure_logging
 from app.core.observability import trace_id_context
 from app.core.telemetry import configure_telemetry
 from app.routers import agents, ai, auth, governance, kpis, reports, tickets, workflows
+from app.routers.risks import packages_router, risks_router
 
 settings = get_settings()
 configure_logging()
@@ -73,3 +74,5 @@ app.include_router(governance.router)
 app.include_router(kpis.router)
 app.include_router(workflows.router)
 app.include_router(reports.router)
+app.include_router(risks_router)
+app.include_router(packages_router)
