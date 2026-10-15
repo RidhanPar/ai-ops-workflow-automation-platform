@@ -6,7 +6,7 @@ This portfolio project turns operational events into auditable automated actions
 
 [Live dashboard](https://ridhan-ai-ops-dashboard.onrender.com) · [API documentation](https://ridhan-ai-ops-api.onrender.com/docs) · [API health](https://ridhan-ai-ops-api.onrender.com/health)
 
-`hr-automation` `employee-lifecycle` `people-ops` `workflow-engine` `fastapi`
+`workflow-engine` `fastapi` `langgraph` `openai` `anthropic`
 
 ![Secure agent dashboard](assets/screenshots/secure-agent-dashboard.png)
 
@@ -25,9 +25,7 @@ This portfolio project turns operational events into auditable automated actions
 | Migrations and production deployment | [`backend/migrations/`](backend/migrations/), [`docker-compose.prod.yml`](docker-compose.prod.yml), [`render.yaml`](render.yaml) |
 | Prometheus metrics and Grafana dashboard | [`monitoring/`](monitoring/), [`docker-compose.monitoring.yml`](docker-compose.monitoring.yml) |
 | Kubernetes manifests and autoscaling | [`k8s/`](k8s/), [`.github/workflows/k8s-validate.yml`](.github/workflows/k8s-validate.yml) |
-| AI ticket assistant prompt templates | [`backend/prompts/ticket_assistant.py`](backend/prompts/ticket_assistant.py) |
 | AI assistant offline evaluation (CI) | [`backend/evaluations/eval_ai_assistant.py`](backend/evaluations/eval_ai_assistant.py) |
-| Structured AI call observability logs | [`backend/observability.py`](backend/observability.py) |
 
 ## Implemented Production Signals
 
@@ -41,6 +39,10 @@ This portfolio project turns operational events into auditable automated actions
 - Golden-dataset evaluation for routing, priority, schema, prompt injection, fallback, latency, and cost.
 - Alembic migrations, separate demo seeding, development and production Docker Compose profiles.
 - GitHub Actions for linting, tests/coverage, evaluation, frontend build, migrations, and container configuration.
+
+## Optional n8n integration
+
+The [`n8n/`](n8n/) directory contains a standalone Docker Compose file and example workflow definitions for connecting this platform to n8n, a self-hosted workflow automation tool. It is an optional local integration example and is not required to run the main platform.
 
 ## Architecture
 

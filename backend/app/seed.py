@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -93,7 +93,7 @@ def seed_demo_data(db: Session) -> None:
     db.add_all(agents)
     db.commit()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     tickets = [
         Ticket(
             external_id="AIOPS-00001",

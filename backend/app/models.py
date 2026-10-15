@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
@@ -49,8 +49,8 @@ class Ticket(Base):
     status: Mapped[str] = mapped_column(String(50), default=TicketStatus.open.value)
     priority: Mapped[str] = mapped_column(String(50), default=Priority.medium.value)
     sla_due_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
     escalated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -71,7 +71,7 @@ class WorkflowRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     trigger: Mapped[dict] = mapped_column(JSON, nullable=False)
     actions: Mapped[list] = mapped_column(JSON, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class WorkflowExecution(Base):
@@ -84,7 +84,7 @@ class WorkflowExecution(Base):
     actions_taken: Mapped[list] = mapped_column(JSON, nullable=False)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     idempotency_key: Mapped[str] = mapped_column(String(160), unique=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Notification(Base):
@@ -94,7 +94,7 @@ class Notification(Base):
     ticket_id: Mapped[int] = mapped_column(ForeignKey("tickets.id"), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     audience: Mapped[str] = mapped_column(String(120), default="operations")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class User(Base):
@@ -105,7 +105,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(40), default="viewer")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class KnowledgeDocument(Base):
@@ -116,7 +116,7 @@ class KnowledgeDocument(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     embedding: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class AuditEvent(Base):
@@ -130,7 +130,7 @@ class AuditEvent(Base):
     resource_id: Mapped[str] = mapped_column(String(80), nullable=False)
     before_json: Mapped[dict] = mapped_column(JSON, default=dict)
     after_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ApprovalRequest(Base):
@@ -144,7 +144,7 @@ class ApprovalRequest(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     proposed_changes: Mapped[dict] = mapped_column(JSON, default=dict)
     reviewed_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -162,4 +162,4 @@ class TraceSpan(Base):
     estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0)
     error_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))

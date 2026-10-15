@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
@@ -56,7 +56,7 @@ def create_ticket(
         channel=payload.channel,
         category=payload.category,
         priority=payload.priority,
-        sla_due_at=datetime.utcnow() + timedelta(hours=payload.sla_hours),
+        sla_due_at=datetime.now(timezone.utc) + timedelta(hours=payload.sla_hours),
         owner_id=payload.owner_id,
     )
     db.add(ticket)
@@ -87,9 +87,9 @@ def update_ticket(
         setattr(ticket, field, value)
 
     if data.get("status") == "resolved" and not ticket.resolved_at:
-        ticket.resolved_at = datetime.utcnow()
+        ticket.resolved_at = datetime.now(timezone.utc)
 
-    ticket.updated_at = datetime.utcnow()
+    ticket.updated_at = datetime.now(timezone.utc)
     ticket.version += 1
     record_audit(db, user.username, "ticket.updated", "ticket", ticket.id, before=before, after=data)
     db.commit()

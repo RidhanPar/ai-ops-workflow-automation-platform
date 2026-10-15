@@ -17,9 +17,9 @@ from anthropic import Anthropic
 from anthropic import APIConnectionError as AnthropicAPIConnectionError
 from anthropic import APITimeoutError as AnthropicAPITimeoutError
 from anthropic import RateLimitError as AnthropicRateLimitError
-from openai import OpenAI
 from openai import APIConnectionError as OpenAIAPIConnectionError
 from openai import APITimeoutError as OpenAIAPITimeoutError
+from openai import OpenAI
 from openai import RateLimitError as OpenAIRateLimitError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -35,6 +35,49 @@ Use only these categories: billing, technical, policy, workforce, general.
 Use only these priorities: low, medium, high, critical.
 Use only these teams: Billing Ops, Technical Support, Policy Ops, Workforce Desk, Escalations Desk, General Support.
 """
+
+# Tool definition used by AnthropicProvider to enforce structured JSON output.
+# Forcing tool use is more reliable than asking the model to output raw JSON because
+# the model cannot omit or reformat required fields when bound to a schema.
+_ANALYSIS_TOOL_SCHEMA: dict = {
+    "name": "analyze_ticket",
+    "description": "Return a structured analysis of the support ticket.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {"type": "string"},
+            "category": {
+                "type": "string",
+                "enum": ["billing", "technical", "policy", "workforce", "general"],
+            },
+            "recommended_priority": {
+                "type": "string",
+                "enum": ["low", "medium", "high", "critical"],
+            },
+            "recommended_team": {
+                "type": "string",
+                "enum": [
+                    "Billing Ops",
+                    "Technical Support",
+                    "Policy Ops",
+                    "Workforce Desk",
+                    "Escalations Desk",
+                    "General Support",
+                ],
+            },
+            "next_action": {"type": "string"},
+            "confidence": {"type": "number"},
+        },
+        "required": [
+            "summary",
+            "category",
+            "recommended_priority",
+            "recommended_team",
+            "next_action",
+            "confidence",
+        ],
+    },
+}
 
 
 class LLMProviderError(Exception):
@@ -61,6 +104,20 @@ class LLMProvider(ABC):
     @abstractmethod
     def complete(self, prompt: dict) -> LLMResult:
         """Send the prompt to the model and return its text response and token usage."""
+
+
+def _strip_fences(text: str) -> str:
+    """Strip markdown code fences from a string, keeping the interior content.
+
+    Some models wrap JSON in ```json ... ``` or ``` ... ``` even when asked not to.
+    This function removes those fences so the caller can attempt JSON parsing.
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        end = -1 if lines[-1].strip() == "```" or lines[-1].strip().startswith("```") else len(lines)
+        return "\n".join(lines[1:end]).strip()
+    return text
 
 
 class OpenAIProvider(LLMProvider):
@@ -134,6 +191,8 @@ class AnthropicProvider(LLMProvider):
             model=self._settings.anthropic_model,
             max_tokens=self._settings.anthropic_max_tokens,
             system=SYSTEM_INSTRUCTIONS,
+            tools=[_ANALYSIS_TOOL_SCHEMA],
+            tool_choice={"type": "tool", "name": "analyze_ticket"},
             messages=[{"role": "user", "content": json.dumps(prompt)}],
         )
 
@@ -147,9 +206,18 @@ class AnthropicProvider(LLMProvider):
         ) as exc:
             raise LLMProviderError(f"Anthropic request failed: {exc}") from exc
 
-        text = "".join(
-            block.text for block in response.content if getattr(block, "type", None) == "text"
-        )
+        # Primary path: extract the tool use block input (already a dict).
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "analyze_ticket":
+                text = json.dumps(block.input)
+                break
+        else:
+            # Secondary path: join text blocks and strip any markdown fences.
+            raw = "".join(
+                block.text for block in response.content if getattr(block, "type", None) == "text"
+            )
+            text = _strip_fences(raw)
+
         usage = getattr(response, "usage", None)
         return LLMResult(
             text=text,

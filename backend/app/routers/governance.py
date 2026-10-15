@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -55,7 +55,7 @@ def decide_approval(
         raise HTTPException(status_code=409, detail="Approval request already decided")
     approval.status = payload.decision
     approval.reviewed_by = user.username
-    approval.reviewed_at = datetime.utcnow()
+    approval.reviewed_at = datetime.now(timezone.utc)
     ticket = db.query(Ticket).filter(Ticket.id == approval.ticket_id).first()
     if payload.decision == "approved" and ticket:
         for field, value in approval.proposed_changes.items():

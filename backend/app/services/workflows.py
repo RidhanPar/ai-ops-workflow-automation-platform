@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -118,7 +118,7 @@ def run_workflows(
             with traced_span(db, rule.name, "workflow", {"ticket_id": ticket.id, "workflow_id": rule.id}):
                 before = {"status": ticket.status, "priority": ticket.priority, "owner_id": ticket.owner_id}
                 actions_taken = [apply_action(db, ticket, action, actor) for action in rule.actions]
-                ticket.updated_at = datetime.utcnow()
+                ticket.updated_at = datetime.now(timezone.utc)
                 ticket.version += 1
                 db.add(
                     WorkflowExecution(

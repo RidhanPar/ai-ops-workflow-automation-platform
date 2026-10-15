@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -40,7 +40,7 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
 
 @router.get("/trends", response_model=list[TrendPoint])
 def trends(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    since = datetime.utcnow() - timedelta(days=13)
+    since = datetime.now(timezone.utc) - timedelta(days=13)
     tickets = db.query(Ticket).filter(Ticket.created_at >= since).all()
     trend_map = defaultdict(lambda: {"created": 0, "resolved": 0})
 
