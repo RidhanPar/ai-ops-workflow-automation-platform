@@ -9,11 +9,12 @@ from evaluations import eval_decision_packages as risk_eval
 
 
 def _perspectives_reply(system: str, prompt: dict) -> LLMResult:
-    treatment = "mitigate" if prompt["impact"] * prompt["likelihood"] >= 6 else "accept"
+    risk = prompt["risk_item"]
+    treatment = "mitigate" if risk["impact"] * risk["likelihood"] >= 6 else "accept"
     perspectives = [
         {
             "area": area,
-            "key_concerns": [f"{area} exposure described in {prompt['risk_title']}"],
+            "key_concerns": [f"{area} exposure described in {risk['title']}"],
             "reviewer_questions": ["Which controls are already in place?"],
             "suggested_treatment": treatment,
             "confidence": 0.8,

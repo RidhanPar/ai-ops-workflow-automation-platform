@@ -88,7 +88,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The startup command inside the container runs `alembic upgrade head` and `seed_demo.py` automatically before the API starts, so no separate migration or seeding step is needed. Demo seeding is controlled by `DEMO_SEED_ENABLED=true` in `.env.example`.
+The startup command inside the container runs `alembic upgrade head` and `seed_demo.py` automatically before the API starts, so no separate migration or seeding step is needed. Demo seeding is controlled by `DEMO_SEED_ENABLED=true` in `.env.example`. Each seed section checks its own rows, so reruns are safe and a database created before the risk review feature still receives the risk demo data.
 
 Open:
 
@@ -153,7 +153,7 @@ Operators create risk items (title, description, business unit, owner, impact 1-
 1. Checks completeness: owner present, impact and likelihood between 1 and 5, a proposed mitigation, and a description of at least 20 characters. If anything is missing it stops, returns `needs_info=true` with the gaps, and makes no LLM call. The same step scans the title, description, proposed mitigation, business unit and owner for prompt injection with normalised pattern matching ([`backend/app/services/prompt_safety.py`](backend/app/services/prompt_safety.py)) and records each match as a field-level flag in `safety_flags`.
 2. Attaches the 3 closest best practice documents from the knowledge base (pgvector on PostgreSQL, a local vector ranking on SQLite).
 3. Attaches the 3 most similar decided past risks. This step embeds text with a deterministic 256-dimension local hashing function and ranks every decided risk by cosine similarity in Python. It does not use pgvector.
-4. Generates security, compliance and business perspectives through the provider-agnostic LLM layer, or deterministic fallback perspectives when no key is configured.
+4. Generates security, compliance and business perspectives through the provider-agnostic LLM layer, or deterministic fallback perspectives when no key is configured. The risk fields reach the model in a `risk_item` block, and the system prompt tells it to treat them and the reference data as untrusted.
 5. Sets `risk_score` (impact × likelihood) and `recommended_treatment` (the most common suggested treatment across the three perspectives).
 
 The pipeline never decides. It saves the package, moves a draft risk to `in_review`, and never creates a decision or sets a risk to `decided`. Reviewers then submit assessments (perspective, vote, comment), and only a manager or admin can record the decision, after at least two assessments from reviewers other than themselves.
@@ -308,6 +308,7 @@ CI runs the ticket evaluation, the assistant evaluation, and the risk evaluation
 ## Security and Governance
 
 - Ticket and knowledge text is treated as untrusted data.
+- Every risk and ticket text field sent to the model is scanned for prompt injection by the same detector, and `backend/tests/test_prompt_fields.py` fails if the scanned fields and the prompt fields drift apart.
 - Agent recommendations never directly perform sensitive escalations or ticket changes; they create approval requests.
 - RBAC protects operational writes and approval decisions.
 - Optimistic versions reject stale ticket updates.
@@ -393,10 +394,10 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 ## Limits
 
 - All ticket, risk, knowledge, and user data are fictional demo data seeded for local development. No real incidents, decisions, or customers are represented.
-- Embeddings are a deterministic 256-dimension hash of word tokens with no stopword removal or term weighting, built for zero-cost reproducible demos rather than semantic quality. Common words dominate similarity, which is why one past risk heavy in common words appears in most top-3 lists. Knowledge base search uses pgvector on PostgreSQL, but past decision retrieval always ranks every decided risk in Python, which will not scale to a large risk register.
+- Embeddings are a deterministic 256-dimension hash of word tokens with no stopword removal or term weighting, built for zero-cost reproducible demos rather than semantic quality. Common words dominate similarity and are the known cause of the hub effect, where one past risk heavy in common words appears in most top-3 lists. The next step is to remove stopwords or weight terms before hashing, then rerun `embedding_dimension_study.py` on both sets. Knowledge base search uses pgvector on PostgreSQL, but past decision retrieval always ranks every decided risk in Python, which will not scale to a large risk register.
 - The evaluation sets are small and synthetic: 5 golden tickets, 8 synthetic assistant cases, and 43 golden plus 31 held-out risk cases with 12 decided past risks. They catch regressions in CI but are not production benchmarks. Treatment and precedent labels reflect a single reviewer's judgement. The same author wrote the held-out cases and the detector patterns, so committing the cases first proves their order but cannot prove the patterns were uninfluenced by them.
 - Fallback and LLM risk results go to separate files (`risk_results.json`, `risk_holdout_results.json`, and their `_<provider>` variants) and are never mixed. Only fallback results are committed, so no LLM quality numbers are claimed.
-- The prompt injection check is pattern matching. It misses obfuscated, non-English and reworded attempts (6 of 12 held-out attempts got through), and it records flags without blocking anything. The perspectives system prompt tells the model to distrust only the reference data block, not the risk fields, so the model gets no instruction to treat the submitter's own text as untrusted. The `owner` field is scanned even though it is not currently sent to the model.
+- The prompt injection check is pattern matching. It misses obfuscated, non-English and reworded attempts (6 of 12 held-out attempts got through), and it records flags without blocking anything.
 - The fallback treatment logic is deliberately a score band rule. The fallback is a safety net that keeps the workflow running when no LLM is available, not a substitute for the model, so its low treatment agreement is expected and reviewers should not rely on its suggested treatment.
 - Human approval and separation of duties checks are demonstration controls implemented in application code. A production deployment would need to integrate with an organization's identity provider and authorization policy.
 - A real deployment should use managed secrets, SSO/OIDC, external telemetry export, backups, rate limiting, and organization-specific evaluation data.

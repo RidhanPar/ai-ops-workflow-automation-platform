@@ -21,7 +21,7 @@ from app.schemas import TicketAnalysis
 from app.services.audit import record_audit
 from app.services.knowledge import search_knowledge_base
 from app.services.llm_provider import LLMProviderError, get_llm_provider
-from app.services.prompt_safety import detect_prompt_injection
+from app.services.prompt_safety import scan_fields
 
 settings = get_settings()
 
@@ -59,8 +59,14 @@ def _fallback_analysis(title: str, description: str, channel: str = "email") -> 
     )
 
 
-def _prompt_injection_flags(value: str) -> list[str]:
-    return [f"prompt_injection:{category}" for category in detect_prompt_injection(value)]
+def _ticket_text_fields(ticket: Ticket) -> dict[str, str | None]:
+    """The ticket text fields: sent to the model and scanned for prompt injection."""
+    return {
+        "title": ticket.title,
+        "description": ticket.description,
+        "customer": ticket.customer,
+        "channel": ticket.channel,
+    }
 
 
 def get_customer_history(db: Session, customer: str, exclude_ticket_id: int) -> list[dict]:
@@ -104,19 +110,13 @@ def _gather_context(db: Session, state: AgentState) -> AgentState:
     state["context"] = {"knowledge": documents, "customer_history": history}
     state["tools_used"] = ["search_knowledge_base", "get_customer_history"]
     state["knowledge_sources"] = [item["title"] for item in documents]
-    state["safety_flags"] = _prompt_injection_flags(f"{ticket.title} {ticket.description}")
+    state["safety_flags"] = scan_fields(_ticket_text_fields(ticket))
     return state
 
 
 def _reason(state: AgentState) -> AgentState:
-    ticket = state["ticket"]
     prompt = {
-        "ticket": {
-            "title": ticket.title,
-            "description": ticket.description,
-            "customer": ticket.customer,
-            "channel": ticket.channel,
-        },
+        "ticket": _ticket_text_fields(state["ticket"]),
         "retrieved_context": state["context"],
         "safety_flags": state["safety_flags"],
     }

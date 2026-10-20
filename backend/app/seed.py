@@ -17,6 +17,24 @@ from app.models import (
 )
 from app.services.knowledge import add_knowledge_document
 
+TICKET_KNOWLEDGE_DOCUMENTS: list[tuple[str, str, list[str]]] = [
+    (
+        "Billing payment failure runbook",
+        "Validate invoice changes, payment status, and account history. Billing Ops owns payment and refund investigations.",
+        ["billing", "payment", "refund"],
+    ),
+    (
+        "Critical outage escalation policy",
+        "Critical outages require human-approved escalation, Technical Support investigation, and an operations-lead notification.",
+        ["technical", "outage", "escalation"],
+    ),
+    (
+        "Policy appeal handling",
+        "Policy appeals must be routed to Policy Ops and require approval before a final customer response is sent.",
+        ["policy", "appeal", "approval"],
+    ),
+]
+
 RISK_KNOWLEDGE_DOCUMENTS: list[tuple[str, str, list[str]]] = [
     (
         "Risk scoring and treatment guide",
@@ -62,30 +80,25 @@ def seed_demo_data(db: Session) -> None:
         )
         db.commit()
 
-    if db.query(KnowledgeDocument).count() == 0:
-        add_knowledge_document(
-            db,
-            "Billing payment failure runbook",
-            "Validate invoice changes, payment status, and account history. Billing Ops owns payment and refund investigations.",
-            ["billing", "payment", "refund"],
-        )
-        add_knowledge_document(
-            db,
-            "Critical outage escalation policy",
-            "Critical outages require human-approved escalation, Technical Support investigation, and an operations-lead notification.",
-            ["technical", "outage", "escalation"],
-        )
-        add_knowledge_document(
-            db,
-            "Policy appeal handling",
-            "Policy appeals must be routed to Policy Ops and require approval before a final customer response is sent.",
-            ["policy", "appeal", "approval"],
-        )
-        db.commit()
+    _add_missing_documents(db, TICKET_KNOWLEDGE_DOCUMENTS)
+    _seed_agents(db)
+    _seed_tickets(db)
+    _seed_workflows(db)
+    _add_missing_documents(db, RISK_KNOWLEDGE_DOCUMENTS)
+    _seed_risk_data(db)
 
+
+def _add_missing_documents(db: Session, documents: list[tuple[str, str, list[str]]]) -> None:
+    existing = {title for (title,) in db.query(KnowledgeDocument.title)}
+    for title, content, tags in documents:
+        if title not in existing:
+            add_knowledge_document(db, title, content, tags)
+    db.commit()
+
+
+def _seed_agents(db: Session) -> None:
     if db.query(Agent).count() > 0:
         return
-
     agents = [
         Agent(
             name="Ridhan P",
@@ -131,6 +144,10 @@ def seed_demo_data(db: Session) -> None:
     db.add_all(agents)
     db.commit()
 
+
+def _seed_tickets(db: Session) -> None:
+    if db.query(Ticket).count() > 0:
+        return
     now = datetime.now(timezone.utc)
     tickets = [
         Ticket(
@@ -211,7 +228,12 @@ def seed_demo_data(db: Session) -> None:
         ),
     ]
     db.add_all(tickets)
+    db.commit()
 
+
+def _seed_workflows(db: Session) -> None:
+    if db.query(WorkflowRule).count() > 0:
+        return
     workflows = [
         WorkflowRule(
             name="Critical Ticket Escalation",
@@ -266,17 +288,8 @@ def seed_demo_data(db: Session) -> None:
     db.add_all(workflows)
     db.commit()
 
-    _seed_risk_data(db)
-
 
 def _seed_risk_data(db: Session) -> None:
-    if db.query(RiskItem).count() > 0:
-        return
-
-    for title, content, tags in RISK_KNOWLEDGE_DOCUMENTS:
-        add_knowledge_document(db, title, content, tags)
-    db.commit()
-
     now = datetime.now(timezone.utc)
     risks = [
         RiskItem(
@@ -438,6 +451,9 @@ def _seed_risk_data(db: Session) -> None:
             updated_at=now - timedelta(days=8),
         ),
     ]
+    # Check for the demo risks themselves, so risks users created after an upgrade do not block seeding.
+    if db.query(RiskItem).filter(RiskItem.title.in_([risk.title for risk in risks])).first() is not None:
+        return
     db.add_all(risks)
     db.flush()
 
