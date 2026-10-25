@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     anthropic_max_tokens: int = 1024
     anthropic_input_cost_per_1m: float = 3.0
     anthropic_output_cost_per_1m: float = 15.0
+    groq_api_key: str | None = None
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_timeout_seconds: float = 30
+    groq_max_retries: int = 5
+    groq_input_cost_per_1m: float = 0.0
+    groq_output_cost_per_1m: float = 0.0
     jwt_secret: str = "local-demo-secret-change-me-please-32"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60

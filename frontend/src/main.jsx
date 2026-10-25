@@ -232,6 +232,7 @@ function getUsername() {
 const SOURCE_LABELS = {
   openai_structured_output: 'OpenAI structured output',
   anthropic_messages: 'Anthropic tool use',
+  groq_tool_call: 'Groq tool call',
   fallback_no_provider: 'Fallback — no LLM configured',
   fallback_invalid_output: 'Fallback — invalid LLM output',
   fallback_provider_failure: 'Fallback — LLM provider error',
@@ -247,7 +248,7 @@ function scoreType(score) {
 }
 
 function sourceVariant(source) {
-  if (source === 'openai_structured_output' || source === 'anthropic_messages') return 'enabled';
+  if (['openai_structured_output', 'anthropic_messages', 'groq_tool_call'].includes(source)) return 'enabled';
   if (source === 'seed') return '';
   return 'high';
 }

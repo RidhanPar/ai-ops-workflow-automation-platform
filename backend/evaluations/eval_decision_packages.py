@@ -30,15 +30,15 @@ from app.schemas import DecisionPackageOut, ReviewerAssessmentCreate, RiskDecisi
 from app.seed import RISK_KNOWLEDGE_DOCUMENTS  # noqa: E402
 from app.services.decision_package import Perspective, generate_decision_package  # noqa: E402
 from app.services.knowledge import add_knowledge_document  # noqa: E402
-from app.services.llm_provider import AnthropicProvider, OpenAIProvider  # noqa: E402
+from app.services.llm_provider import _PROVIDERS  # noqa: E402
 
 EVAL_DIR = Path(__file__).resolve().parent
 GOLDEN_PATH = EVAL_DIR / "risk_golden_set.json"
 HOLDOUT_PATH = EVAL_DIR / "risk_holdout_set.json"
 PAST_DECISIONS_PATH = EVAL_DIR / "risk_past_decisions.json"
 CASE_SETS = {"golden": (GOLDEN_PATH, "risk_results"), "holdout": (HOLDOUT_PATH, "risk_holdout_results")}
-PROVIDERS = ("openai", "anthropic")
-PROVIDER_SOURCES = frozenset({OpenAIProvider.source_label, AnthropicProvider.source_label})
+PROVIDERS = tuple(_PROVIDERS)
+PROVIDER_SOURCES = frozenset(provider.source_label for provider in _PROVIDERS.values())
 TREATMENTS = frozenset(get_args(RiskDecisionCreate.model_fields["decision"].annotation))
 AREAS = frozenset(get_args(ReviewerAssessmentCreate.model_fields["perspective"].annotation))
 ACTOR = "eval-runner"
@@ -372,6 +372,8 @@ def main(argv: list[str] | None = None, out_dir: Path = EVAL_DIR) -> int:
 
     results = run_evaluation(settings, mode, case_path)
     failures = check_thresholds(results, thresholds)
+    if args.provider:
+        results["model"] = getattr(settings, f"{args.provider}_model")
     results["thresholds"] = {name: f"{op} {limit}" for name, (op, limit) in thresholds.items()}
     results["threshold_failures"] = failures
     out_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")

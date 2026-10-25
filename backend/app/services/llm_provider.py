@@ -1,6 +1,6 @@
 """Provider-agnostic LLM layer for ticket analysis.
 
-Both OpenAI and Anthropic implement the same `LLMProvider` interface: a single
+OpenAI, Anthropic and Groq implement the same `LLMProvider` interface: a single
 `complete()` method that takes the prompt payload and returns the model's raw text
 response plus token usage. `get_llm_provider()` selects the active provider from
 settings and returns None when the selected provider has no API key, which lets the
@@ -19,9 +19,10 @@ from anthropic import APITimeoutError as AnthropicAPITimeoutError
 from anthropic import RateLimitError as AnthropicRateLimitError
 from openai import APIConnectionError as OpenAIAPIConnectionError
 from openai import APITimeoutError as OpenAIAPITimeoutError
+from openai import BadRequestError as OpenAIBadRequestError
 from openai import OpenAI
 from openai import RateLimitError as OpenAIRateLimitError
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.core.config import Settings, get_settings
 
@@ -344,30 +345,105 @@ class AnthropicProvider(LLMProvider):
         )
 
 
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+_GROQ_RETRYABLE = (OpenAIAPITimeoutError, OpenAIAPIConnectionError, OpenAIRateLimitError)
+
+
+def _is_tool_use_failure(exc: BaseException) -> bool:
+    # Groq answers 400 tool_use_failed when the model's tool arguments are not valid JSON.
+    return isinstance(exc, OpenAIBadRequestError) and getattr(exc, "code", None) == "tool_use_failed"
+
+
+def _groq_should_retry(exc: BaseException) -> bool:
+    return isinstance(exc, _GROQ_RETRYABLE) or _is_tool_use_failure(exc)
+
+
+def _as_openai_tool(schema: dict) -> dict:
+    return {
+        "type": "function",
+        "function": {"name": schema["name"], "description": schema["description"], "parameters": schema["input_schema"]},
+    }
+
+
+class GroqProvider(LLMProvider):
+    """Groq's OpenAI-compatible chat API, with a forced tool call like the Anthropic path."""
+
+    name = "groq"
+    source_label = "groq_tool_call"
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self.input_cost_per_1m = settings.groq_input_cost_per_1m
+        self.output_cost_per_1m = settings.groq_output_cost_per_1m
+        self._client = OpenAI(
+            api_key=settings.groq_api_key,
+            base_url=GROQ_BASE_URL,
+            timeout=settings.groq_timeout_seconds,
+            max_retries=0,
+        )
+
+    # Free-tier rate limits reset within seconds, so waits run longer than for the other providers.
+    @retry(
+        retry=retry_if_exception(_groq_should_retry),
+        wait=wait_exponential(min=2, max=30),
+        stop=stop_after_attempt(_settings.groq_max_retries + 1),
+        reraise=True,
+    )
+    def _invoke(self, system: str, prompt: dict, tool_schema: dict):
+        return self._client.chat.completions.create(
+            model=self._settings.groq_model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": json.dumps(prompt)}],
+            tools=[_as_openai_tool(tool_schema)],
+            tool_choice={"type": "function", "function": {"name": tool_schema["name"]}},
+        )
+
+    def _call(self, system: str, prompt: dict, tool_schema: dict) -> LLMResult:
+        try:
+            response = self._invoke(system, prompt, tool_schema)
+        except _GROQ_RETRYABLE as exc:
+            raise LLMProviderError(f"Groq request failed: {exc}") from exc
+        except OpenAIBadRequestError as exc:
+            if not _is_tool_use_failure(exc):
+                raise
+            # Hand back the broken generation so the caller's JSON check records invalid output.
+            error = exc.body.get("error", exc.body) if isinstance(exc.body, dict) else {}
+            return LLMResult(text=str(error.get("failed_generation", "")))
+
+        message = response.choices[0].message
+        calls = [call for call in (message.tool_calls or []) if call.function.name == tool_schema["name"]]
+        text = calls[0].function.arguments if calls else _strip_fences(message.content or "")
+        usage = getattr(response, "usage", None)
+        return LLMResult(
+            text=text,
+            input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+        )
+
+    def complete(self, prompt: dict) -> LLMResult:
+        return self._call(SYSTEM_INSTRUCTIONS, prompt, _ANALYSIS_TOOL_SCHEMA)
+
+    def complete_json(self, system: str, prompt: dict) -> LLMResult:
+        return self._call(system, prompt, _PERSPECTIVES_TOOL_SCHEMA)
+
+
 _PROVIDERS: dict[str, type[LLMProvider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
+    "groq": GroqProvider,
 }
-
-
-def _api_key_for(provider_name: str, settings: Settings) -> str | None:
-    if provider_name == "anthropic":
-        return settings.anthropic_api_key
-    return settings.openai_api_key
 
 
 def get_llm_provider(settings: Settings | None = None) -> LLMProvider | None:
     """Return the configured provider, or None when it has no API key.
 
-    Selection follows the `llm_provider` setting ("openai" or "anthropic"). An
-    unknown value falls back to OpenAI. None signals the caller to use the
+    Selection follows the `llm_provider` setting ("openai", "anthropic" or "groq").
+    An unknown value falls back to OpenAI. None signals the caller to use the
     deterministic keyword-rule fallback.
     """
     settings = settings or get_settings()
     provider_name = (settings.llm_provider or "openai").strip().lower()
-    provider_cls = _PROVIDERS.get(provider_name, OpenAIProvider)
-    resolved_name = "anthropic" if provider_cls is AnthropicProvider else "openai"
-
-    if not _api_key_for(resolved_name, settings):
+    if provider_name not in _PROVIDERS:
+        provider_name = "openai"
+    if not getattr(settings, f"{provider_name}_api_key"):
         return None
-    return provider_cls(settings)
+    return _PROVIDERS[provider_name](settings)

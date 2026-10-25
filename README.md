@@ -15,7 +15,7 @@ This portfolio project turns operational events into auditable automated actions
 | Capability | Evidence |
 |---|---|
 | LangGraph agent and explicit tools | [`backend/app/services/agent.py`](backend/app/services/agent.py) |
-| Provider-agnostic LLM layer (OpenAI and Anthropic) | [`backend/app/services/llm_provider.py`](backend/app/services/llm_provider.py) |
+| Provider-agnostic LLM layer (OpenAI, Anthropic and Groq) | [`backend/app/services/llm_provider.py`](backend/app/services/llm_provider.py) |
 | RAG/vector search | [`backend/app/services/knowledge.py`](backend/app/services/knowledge.py), pgvector migration |
 | Authentication and RBAC | [`backend/app/core/security.py`](backend/app/core/security.py) |
 | Audit, approvals, idempotency | [`backend/app/services/audit.py`](backend/app/services/audit.py), [`backend/app/services/workflows.py`](backend/app/services/workflows.py) |
@@ -126,23 +126,24 @@ Every run is idempotent: an `idempotency_key` scoped per ticket and rule prevent
 
 ## LLM Provider Layer
 
-Ticket analysis runs through a provider-agnostic layer in [`backend/app/services/llm_provider.py`](backend/app/services/llm_provider.py). Both providers implement one `LLMProvider` interface with a single `complete()` method that takes the prompt payload and returns the model's text response and token usage:
+Ticket analysis runs through a provider-agnostic layer in [`backend/app/services/llm_provider.py`](backend/app/services/llm_provider.py). All three providers implement one `LLMProvider` interface with a single `complete()` method that takes the prompt payload and returns the model's text response and token usage:
 
 - `OpenAIProvider` calls the OpenAI Responses API with a JSON output format.
 - `AnthropicProvider` calls the Anthropic Messages API (`client.messages.create`) with the same system instructions.
+- `GroqProvider` calls Groq's OpenAI-compatible chat API and forces a tool call against the same JSON schemas the Anthropic path uses. When the model's tool arguments are not valid JSON, Groq answers `tool_use_failed`, which is retried and, if it keeps failing, recorded as invalid output.
 
-The active provider is chosen by the `LLM_PROVIDER` setting (`openai` or `anthropic`, default `openai`). The LangGraph agent in [`backend/app/services/agent.py`](backend/app/services/agent.py) calls through this layer rather than any single SDK, parses the response into a Pydantic `TicketAnalysis`, and records latency, token, and cost spans.
+The active provider is chosen by the `LLM_PROVIDER` setting (`openai`, `anthropic` or `groq`, default `openai`). The LangGraph agent in [`backend/app/services/agent.py`](backend/app/services/agent.py) calls through this layer rather than any single SDK, parses the response into a Pydantic `TicketAnalysis`, and records latency, token, and cost spans.
 
 When no API key is set for the selected provider, the agent skips the LLM call and uses the deterministic keyword-rule fallback, so the platform runs end to end with no external calls and no cost.
 
 | Setting | Purpose | Default |
 |---|---|---|
-| `LLM_PROVIDER` | Selects `openai` or `anthropic` | `openai` |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Provider credentials (absent means fallback) | empty |
-| `OPENAI_MODEL` / `ANTHROPIC_MODEL` | Model id per provider | `gpt-4o` / `claude-sonnet-4-5` |
-| `*_TIMEOUT_SECONDS`, `*_MAX_RETRIES` | Per-provider timeout and retry budget | `20`, `2` |
+| `LLM_PROVIDER` | Selects `openai`, `anthropic` or `groq` | `openai` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` | Provider credentials (absent means fallback) | empty |
+| `OPENAI_MODEL` / `ANTHROPIC_MODEL` / `GROQ_MODEL` | Model id per provider | `gpt-4o` / `claude-sonnet-4-5` / `openai/gpt-oss-120b` |
+| `*_TIMEOUT_SECONDS`, `*_MAX_RETRIES` | Per-provider timeout and retry budget | `20`, `2` (Groq `30`, `5`) |
 | `ANTHROPIC_MAX_TOKENS` | Response token cap (required by the Messages API) | `1024` |
-| `*_INPUT_COST_PER_1M`, `*_OUTPUT_COST_PER_1M` | Per-provider pricing used for cost spans | provider-specific |
+| `*_INPUT_COST_PER_1M`, `*_OUTPUT_COST_PER_1M` | Per-provider pricing used for cost spans | provider-specific (Groq `0`, so set it to record cost) |
 
 ## Risk Review
 
@@ -261,7 +262,7 @@ python evaluations/eval_decision_packages.py                # 43 golden risk cas
 python evaluations/eval_decision_packages.py --set holdout  # 31 held-out risk cases, writes risk_holdout_results.json
 python evaluations/embedding_dimension_study.py             # past decision retrieval at 64, 256 and 512 dimensions
 # live LLM run, needs that provider's API key, adds _<provider> to the results file name:
-python evaluations/eval_decision_packages.py --provider anthropic
+python evaluations/eval_decision_packages.py --provider groq
 ```
 
 ### Ticket assistant (5 golden tickets, `backend/evaluations/results.json`)
@@ -301,7 +302,20 @@ The floors sit at the measured values, so CI fails if any metric gets worse on e
 - **Completeness.** The one golden miss has `TBD` as its mitigation, which passes the non-empty check.
 - **Treatment.** The fallback is unchanged by design (see Limits). It maps every score from 6 to 11 to transfer and agrees with reviewers on 8 of 18 clear and 11 of 16 borderline golden cases. The held-out set was written to test detection and retrieval, and 14 of its 29 complete cases score exactly 12, so its 18/29 says little about treatment.
 
-A provider run needs that provider's API key, adds `_<provider>` to the results file name (for example `risk_holdout_results_anthropic.json`), and leaves the fallback files untouched. It fails unless every complete package used the provider's output, so a run that silently fell back cannot pass as an LLM result. Completeness, injection flags and past decision retrieval happen before the model call, so only treatment agreement and schema validity can differ between modes. No provider run has been committed yet. The provider code path is exercised in CI by `backend/tests/test_eval_decision_packages.py` with a mocked provider, for both sets.
+A provider run needs that provider's API key, adds `_<provider>` to the results file name (for example `risk_holdout_results_groq.json`), and leaves the fallback files untouched. It fails unless every complete package used the provider's output, so a run that silently fell back cannot pass as an LLM result. Completeness, injection flags and past decision retrieval happen before the model call, so only treatment agreement and schema validity can differ between modes. The provider code path is exercised in CI by `backend/tests/test_eval_decision_packages.py` with a mocked provider, for both sets, so CI never needs a key.
+
+### Groq run (`openai/gpt-oss-120b`, `risk_results_groq.json` and `risk_holdout_results_groq.json`)
+
+One live run on both sets. Every complete package used Groq's output (35/35 golden, 29/29 held-out).
+
+| Metric | Fallback, golden | Groq, golden | Fallback, held-out | Groq, held-out |
+|---|---:|---:|---:|---:|
+| Treatment agreement | 19/34 | 27/34 | 18/29 | 27/29 |
+| Treatment agreement, clear cases | 8/18 | 14/18 | 3/13 | 11/13 |
+| Treatment agreement, borderline cases | 11/16 | 13/16 | 15/16 | 16/16 |
+| Package schema validity | 43/43 | 43/43 | 31/31 | 31/31 |
+
+Every other metric is identical to the fallback run because it is decided before the model is called. This is a single run of a sampled model, so a rerun can differ by a few cases. The first attempt on the golden set failed the run's own gate: Groq rejected one tool call because the model wrote `"confidence": 0. nine`, so that package fell back. Such calls are now retried, and the committed run needed no fallback. Treatment labels are a single reviewer's judgement, so agreement measures closeness to that reviewer, not correctness.
 
 CI runs the ticket evaluation, the assistant evaluation, and the risk evaluation on both sets, then uploads `results.json`, `risk_results.json` and `risk_holdout_results.json` as the `llm-evaluation-results` artifact. `eval_decision_packages.py` and `eval_ai_assistant.py` exit with an error when a threshold fails, which fails the build.
 
@@ -396,7 +410,7 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 - All ticket, risk, knowledge, and user data are fictional demo data seeded for local development. No real incidents, decisions, or customers are represented.
 - Embeddings are a deterministic 256-dimension hash of word tokens with no stopword removal or term weighting, built for zero-cost reproducible demos rather than semantic quality. Common words dominate similarity and are the known cause of the hub effect, where one past risk heavy in common words appears in most top-3 lists. The next step is to remove stopwords or weight terms before hashing, then rerun `embedding_dimension_study.py` on both sets. Knowledge base search uses pgvector on PostgreSQL, but past decision retrieval always ranks every decided risk in Python, which will not scale to a large risk register.
 - The evaluation sets are small and synthetic: 5 golden tickets, 8 synthetic assistant cases, and 43 golden plus 31 held-out risk cases with 12 decided past risks. They catch regressions in CI but are not production benchmarks. Treatment and precedent labels reflect a single reviewer's judgement. The same author wrote the held-out cases and the detector patterns, so committing the cases first proves their order but cannot prove the patterns were uninfluenced by them.
-- Fallback and LLM risk results go to separate files (`risk_results.json`, `risk_holdout_results.json`, and their `_<provider>` variants) and are never mixed. Only fallback results are committed, so no LLM quality numbers are claimed.
+- Fallback and LLM risk results go to separate files (`risk_results.json`, `risk_holdout_results.json`, and their `_<provider>` variants) and are never mixed. The only committed LLM results are one Groq run with `openai/gpt-oss-120b`. Model output varies between runs, so its treatment numbers can move by a few cases on a rerun, and no OpenAI or Anthropic run has been made.
 - The prompt injection check is pattern matching. It misses obfuscated, non-English and reworded attempts (6 of 12 held-out attempts got through), and it records flags without blocking anything.
 - The fallback treatment logic is deliberately a score band rule. The fallback is a safety net that keeps the workflow running when no LLM is available, not a substitute for the model, so its low treatment agreement is expected and reviewers should not rely on its suggested treatment.
 - Human approval and separation of duties checks are demonstration controls implemented in application code. A production deployment would need to integrate with an organization's identity provider and authorization policy.
@@ -404,4 +418,4 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and [`docs/RUNBOOK.md`](docs/RUNB
 
 ## Resume Bullet
 
-Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an optional LLM assistant behind a provider-agnostic layer supporting OpenAI and Anthropic; added LangGraph orchestration, a deterministic fallback, automated evaluations, trace evidence, CI tests, and approval controls.
+Built a Dockerized FastAPI/PostgreSQL operations platform that routes and escalates tickets through configurable workflows and an optional LLM assistant behind a provider-agnostic layer supporting OpenAI, Anthropic and Groq; added LangGraph orchestration, a deterministic fallback, automated evaluations, trace evidence, CI tests, and approval controls.

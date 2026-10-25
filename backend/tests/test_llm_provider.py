@@ -123,7 +123,7 @@ def test_get_llm_provider_returns_none_when_anthropic_key_absent():
 
 
 def test_get_llm_provider_unknown_value_falls_back_to_openai():
-    s = Settings(llm_provider="groq", openai_api_key="sk-test", database_url=_DB_URL, jwt_secret=_JWT)
+    s = Settings(llm_provider="mistral", openai_api_key="sk-test", database_url=_DB_URL, jwt_secret=_JWT)
     assert isinstance(get_llm_provider(s), OpenAIProvider)
 
 
@@ -314,3 +314,123 @@ def test_anthropic_rate_limit_raises_llm_provider_error():
     )
     with pytest.raises(LLMProviderError):
         p.complete({})
+
+
+# ---------------------------------------------------------------------------
+# Groq
+# ---------------------------------------------------------------------------
+
+_GROQ_REQUEST = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+
+
+def _groq_settings(**overrides) -> Settings:
+    return Settings(
+        llm_provider="groq",
+        groq_api_key="gsk-test",
+        openai_api_key=None,
+        anthropic_api_key=None,
+        database_url=_DB_URL,
+        jwt_secret=_JWT,
+        **overrides,
+    )
+
+
+def _make_groq_response(tool_name: str | None, arguments: str = "", content: str | None = None) -> MagicMock:
+    call = MagicMock()
+    call.function.name = tool_name
+    call.function.arguments = arguments
+    message = MagicMock(tool_calls=[call] if tool_name else None, content=content)
+    return MagicMock(choices=[MagicMock(message=message)], usage=MagicMock(prompt_tokens=11, completion_tokens=7))
+
+
+def test_get_llm_provider_returns_groq_when_configured():
+    from app.services.llm_provider import GroqProvider
+
+    provider = get_llm_provider(_groq_settings())
+    assert isinstance(provider, GroqProvider)
+    assert str(provider._client.base_url).startswith("https://api.groq.com/openai/v1")
+    assert provider.source_label == "groq_tool_call"
+
+
+def test_get_llm_provider_returns_none_when_groq_key_absent():
+    s = Settings(llm_provider="groq", groq_api_key=None, database_url=_DB_URL, jwt_secret=_JWT)
+    assert get_llm_provider(s) is None
+
+
+def test_groq_complete_json_forces_the_perspectives_tool_and_reads_its_arguments():
+    provider = get_llm_provider(_groq_settings())
+    arguments = json.dumps({"perspectives": []})
+    provider._client.chat.completions.create = MagicMock(return_value=_make_groq_response("generate_perspectives", arguments))
+
+    result = provider.complete_json("system text", {"risk_item": {"title": "t"}})
+
+    kwargs = provider._client.chat.completions.create.call_args.kwargs
+    assert kwargs["tool_choice"] == {"type": "function", "function": {"name": "generate_perspectives"}}
+    assert kwargs["messages"][0] == {"role": "system", "content": "system text"}
+    assert kwargs["model"] == "openai/gpt-oss-120b"
+    assert (result.text, result.input_tokens, result.output_tokens) == (arguments, 11, 7)
+
+
+def test_groq_complete_uses_the_ticket_tool():
+    provider = get_llm_provider(_groq_settings())
+    provider._client.chat.completions.create = MagicMock(
+        return_value=_make_groq_response("analyze_ticket", _VALID_ANALYSIS_JSON)
+    )
+
+    result = provider.complete({"ticket": {}})
+
+    tool = provider._client.chat.completions.create.call_args.kwargs["tools"][0]["function"]
+    assert tool["name"] == "analyze_ticket"
+    assert json.loads(result.text) == _VALID_ANALYSIS_DICT
+
+
+def test_groq_falls_back_to_fenced_text_when_no_tool_call():
+    provider = get_llm_provider(_groq_settings())
+    provider._client.chat.completions.create = MagicMock(
+        return_value=_make_groq_response(None, content=f"```json\n{_VALID_ANALYSIS_JSON}\n```")
+    )
+
+    assert json.loads(provider.complete({"ticket": {}}).text) == _VALID_ANALYSIS_DICT
+
+
+def test_groq_rate_limit_becomes_provider_error():
+    from openai import RateLimitError
+
+    provider = get_llm_provider(_groq_settings())
+    provider._invoke = MagicMock(
+        side_effect=RateLimitError("rate limited", response=httpx.Response(429, request=_GROQ_REQUEST), body=None)
+    )
+
+    with pytest.raises(LLMProviderError):
+        provider.complete_json("system", {})
+
+
+def _tool_use_failed() -> Exception:
+    from openai import BadRequestError
+
+    body = {"code": "tool_use_failed", "failed_generation": '{"confidence": 0. nine}'}
+    return BadRequestError("bad tool call", response=httpx.Response(400, request=_GROQ_REQUEST), body=body)
+
+
+def test_groq_retries_a_failed_tool_call():
+    provider = get_llm_provider(_groq_settings())
+    good = _make_groq_response("generate_perspectives", json.dumps({"perspectives": []}))
+    provider._client.chat.completions.create = MagicMock(side_effect=[_tool_use_failed(), good])
+
+    with patch("tenacity.nap.time.sleep"):
+        result = provider.complete_json("system", {})
+
+    assert provider._client.chat.completions.create.call_count == 2
+    assert json.loads(result.text) == {"perspectives": []}
+
+
+def test_groq_persistent_tool_failure_returns_the_broken_generation():
+    provider = get_llm_provider(_groq_settings())
+    provider._client.chat.completions.create = MagicMock(side_effect=_tool_use_failed())
+
+    with patch("tenacity.nap.time.sleep"):
+        result = provider.complete_json("system", {})
+
+    assert result.text == '{"confidence": 0. nine}'
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(result.text)
